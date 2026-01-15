@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,400..900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -111,8 +113,72 @@ All colors MUST be HSL.
     @apply border-border;
   }
 
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Google Sans Flex', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-variation-settings: 'wght' 400, 'opsz' 14;
+    line-height: 1.6;
+    letter-spacing: -0.01em;
+  }
+
+  /* Accessibility: Visible Focus Rings */
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background;
+  }
+
+  /* Consistent Section Selection */
+  ::selection {
+    @apply bg-primary/20 text-slate-900;
+  }
+
+  h1, h2, h3 {
+    @apply font-black uppercase;
+    line-height: 1.1;
+    letter-spacing: -0.04em;
+    font-variation-settings: 'wght' 900, 'opsz' 48;
+  }
+
+  h4,
+  h5,
+  h6 {
+    @apply font-bold tracking-tight;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+    font-variation-settings: 'wght' 700, 'opsz' 24;
+  }
+
+  .font-thin {
+    font-variation-settings: 'wght' 100, 'opsz' 10;
+    letter-spacing: 0.02em;
+  }
+
+  .font-medium {
+    font-variation-settings: 'wght' 500, 'opsz' 14;
+    letter-spacing: -0.01em;
+  }
+
+  .font-semibold {
+    font-variation-settings: 'wght' 600, 'opsz' 18;
+    letter-spacing: -0.015em;
+  }
+
+  .font-bold {
+    font-variation-settings: 'wght' 700, 'opsz' 24;
+    letter-spacing: -0.02em;
+  }
+
+  .font-black {
+    font-variation-settings: 'wght' 900, 'opsz' 32;
+    letter-spacing: -0.05em;
+  }
+
+  /* Wide tracked labels for technical context */
+  .tracking-widest {
+    letter-spacing: 0.3em !important;
   }
 }
 

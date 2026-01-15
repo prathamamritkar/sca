@@ -162,6 +162,36 @@ class PersonActivity(Base):
         }
 
 
+class User(Base):
+    """User authentication table for role-based access control"""
+    __tablename__ = 'users'
+    
+    user_id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)  # In production, use bcrypt/argon2
+    name = Column(String(255), nullable=True)
+    role = Column(String(20), default='student', index=True)  # 'student', 'faculty', 'admin'
+    department = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    last_login = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=True)
+    
+    def __repr__(self):
+        return f"<User(user_id={self.user_id}, email='{self.email}', role='{self.role}')>"
+    
+    def to_dict(self):
+        """Convert user to dictionary (excluding password)"""
+        return {
+            'user_id': self.user_id,
+            'email': self.email,
+            'name': self.name,
+            'role': self.role,
+            'department': self.department,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'is_active': self.is_active
+        }
+
+
 class Database:
     """Database management class"""
     
@@ -194,6 +224,33 @@ class Database:
             conn.execute('PRAGMA cache_size=-64000')
             conn.execute('PRAGMA busy_timeout=30000')  # 30 seconds
             conn.commit()
+        
+        # Auto-create admin user if no users exist
+        self._ensure_admin_exists()
+    
+    def _ensure_admin_exists(self):
+        """Create default admin user if no users exist in the system"""
+        session = self.get_session()
+        try:
+            user_count = session.query(User).count()
+            if user_count == 0:
+                # Create the system admin as the first user
+                admin_user = User(
+                    email='admin@sca.campus',
+                    password_hash='admin123',  # In production, use proper hashing
+                    name='System Administrator',
+                    role='admin',
+                    department='Administration',
+                    is_active=True
+                )
+                session.add(admin_user)
+                session.commit()
+                print("✓ Auto-created system admin: admin@sca.campus (password: admin123)")
+        except Exception as e:
+            session.rollback()
+            print(f"Warning: Could not auto-create admin: {e}")
+        finally:
+            session.close()
         
     def get_session(self):
         """Get a new database session"""
@@ -354,27 +411,31 @@ class Database:
             session.close()
     
     def get_leaderboard(self):
-        """Get leaderboard with scores"""
+        """Get leaderboard with scores and person details"""
         session = self.get_session()
         try:
             from sqlalchemy import func
             
+            # Join PersonActivity with Person to get department and other info
             scores = session.query(
                 PersonActivity.person_id,
-                func.sum(PersonActivity.incentive_points).label('total_score'),
-                func.count(PersonActivity.activity_id).label('activity_count')
-            ).group_by(PersonActivity.person_id).all()
+                func.sum(PersonActivity.incentive_points).label('total_credits'),
+                func.count(PersonActivity.activity_id).label('total_activities'),
+                Person.department
+            ).join(Person, PersonActivity.person_id == Person.person_id) \
+             .group_by(PersonActivity.person_id, Person.department).all()
             
             leaderboard = [
                 {
                     'person_id': score[0],
-                    'total_score': score[1] or 0,
-                    'activity_count': score[2]
+                    'total_credits': score[1] or 0,
+                    'total_activities': score[2],
+                    'department': score[3] or "Universal"
                 }
                 for score in scores
             ]
             
-            leaderboard.sort(key=lambda x: x['total_score'], reverse=True)
+            leaderboard.sort(key=lambda x: x['total_credits'], reverse=True)
             return leaderboard
         finally:
             session.close()

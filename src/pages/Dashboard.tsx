@@ -61,7 +61,31 @@ const Dashboard = () => {
     setIsCheckingApi(false);
   }, [useMockData]);
 
-  useEffect(() => { checkApiConnection(); }, [checkApiConnection]);
+  const fetchLatestEvents = useCallback(async () => {
+    try {
+      const response = await cvApi.getEvents({ limit: 10 });
+      if (response.success && response.data) {
+        const converted: DetectionResult[] = response.data.events.map((e) => ({
+          id: e.event_id,
+          timestamp: e.timestamp,
+          action: e.action_detected || 'unknown',
+          location: e.room_id || 'Unknown',
+          confidence: e.overall_confidence || 0.9,
+          pointsAwarded: e.blockchain_credits || 0,
+          actionType: e.action_type,
+          energySaved: e.energy_saved_estimate
+        }));
+        setDetectionResults(converted);
+      }
+    } catch (err) {
+      console.error("Failed to fetch events", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkApiConnection();
+    fetchLatestEvents();
+  }, [checkApiConnection, fetchLatestEvents]);
 
   const sessionStats = useMemo(() => {
     const totalCredits = detectionResults.reduce((sum, d) => sum + d.pointsAwarded, 0);
@@ -81,32 +105,31 @@ const Dashboard = () => {
   const handleProcessVideo = async () => {
     if (!videoFile) return;
     setIsProcessing(true);
-    if (useMockData) {
-      setTimeout(() => {
-        const mock = Array.from({ length: 4 }, (_, i) => ({
-          id: Date.now() + i, timestamp: new Date().toISOString(), action: ["light_off", "fan_off", "ac_off"][Math.floor(Math.random() * 3)],
-          location: "Lab_01", confidence: 0.92, pointsAwarded: 10
-        }));
-        setDetectionResults(prev => [...mock, ...prev]);
-        setIsProcessing(false);
-        toast({ title: "Audit Synchronised", description: "Successfully parsed visual stream." });
-      }, 2000);
-    } else {
-      try {
-        const upload = await cvApi.uploadVideo(videoFile);
-        if (!upload.success) throw new Error(upload.error);
-        const process = await cvApi.processVideo(upload.data!.filename, 0.5);
-        if (!process.success) throw new Error(process.error);
-        const converted = (process.data!.events || []).map((e, i) => ({
-          id: e.event_id || i, timestamp: e.timestamp, action: e.action_detected || 'unknown',
-          location: e.room_id || 'Unknown', confidence: e.overall_confidence || 0.9, pointsAwarded: e.blockchain_credits || 0
-        }));
-        setDetectionResults(prev => [...converted, ...prev]);
-        setIsProcessing(false);
-      } catch (err: any) {
-        setIsProcessing(false);
-        toast({ title: "Neural Link Error", description: err.message, variant: "destructive" });
-      }
+
+    try {
+      const upload = await cvApi.uploadVideo(videoFile);
+      if (!upload.success) throw new Error(upload.error);
+
+      const process = await cvApi.processVideo(upload.data!.filename, 0.5);
+      if (!process.success) throw new Error(process.error);
+
+      const converted = (process.data!.events || []).map((e, i) => ({
+        id: e.event_id || Date.now() + i,
+        timestamp: e.timestamp,
+        action: e.action_detected || 'unknown',
+        location: e.room_id || 'Unknown',
+        confidence: e.overall_confidence || 0.9,
+        pointsAwarded: e.blockchain_credits || 0,
+        actionType: e.action_type,
+        energySaved: e.energy_saved_estimate
+      }));
+
+      setDetectionResults(prev => [...converted, ...prev]);
+      toast({ title: "Inference Complete", description: `Successfully parsed ${converted.length} events from stream.` });
+    } catch (err: any) {
+      toast({ title: "Neural Link Error", description: err.message, variant: "destructive" });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -120,11 +143,10 @@ const Dashboard = () => {
               <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center border border-primary/20">
                 <Terminal className="w-5 h-5 text-primary" />
               </div>
-              <h1 className="text-4xl font-black italic tracking-tighter text-slate-900">Neural Engine</h1>
+              <h1 className="text-4xl font-black tracking-tighter text-slate-900">Dashboard</h1>
             </div>
-            <p className="text-slate-500 font-medium max-w-xl text-sm italic leading-relaxed">
-              Active computer vision environment for identifying campus conservation cycles.
-              Detections are automatically cryptographically signed and dispatched to the ledger.
+            <p className="text-slate-500 font-medium max-w-xl text-sm leading-relaxed">
+              Real-time monitoring of campus energy conservation. Verified detections are recorded on the secure ledger.
             </p>
           </div>
 
@@ -138,8 +160,11 @@ const Dashboard = () => {
                 </span>
               </div>
             </div>
+            <Button variant="ghost" size="sm" onClick={fetchLatestEvents} className="h-10 px-4 rounded-xl text-primary hover:bg-primary/5 font-black text-[10px] uppercase tracking-widest transition-all">
+              <RefreshCw className="w-3.5 h-3.5 mr-2" /> Synchronise Hub
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => setDetectionResults([])} className="h-10 px-4 rounded-xl text-destructive hover:bg-destructive/5 font-black text-[10px] uppercase tracking-widest transition-all">
-              <Trash2 className="w-3.5 h-3.5 mr-2" /> Reset Session
+              <Trash2 className="w-3.5 h-3.5 mr-2" /> Clear View
             </Button>
           </div>
         </div>
@@ -159,7 +184,7 @@ const Dashboard = () => {
                 </div>
               </div>
               <div className="space-y-1">
-                <div className={cn("text-2xl font-black italic tracking-tighter", stat.color)}>{stat.value}</div>
+                <div className={cn("text-2xl font-black tracking-tighter", stat.color)}>{stat.value}</div>
                 <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">{stat.label}</div>
               </div>
             </Card>
@@ -178,20 +203,20 @@ const Dashboard = () => {
                   <Upload className="w-10 h-10 text-slate-400 group-hover:text-primary transition-colors" />
                 </div>
                 <div className="space-y-2 text-center">
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight italic">Inject Feed</h3>
-                  <p className="text-xs font-medium text-slate-500 leading-relaxed italic">Point the AI model towards a campus CCTV stream for immediate behavioral analysis.</p>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight">Inject Feed</h3>
+                  <p className="text-xs font-medium text-slate-500 leading-relaxed">Point the AI model towards a campus CCTV stream for immediate behavioral analysis.</p>
                 </div>
               </div>
 
               <div className="flex flex-wrap justify-center gap-4">
                 <input type="file" accept="video/*" onChange={handleFileUpload} className="hidden" id="dash-upload" />
                 <label htmlFor="dash-upload">
-                  <Button asChild variant="outline" className="h-14 px-8 rounded-2xl border-2 font-bold text-xs uppercase tracking-widest bg-white shadow-lg shadow-slate-100 hover:shadow-primary/10 transition-all">
+                  <Button asChild variant="outline" aria-label="Select Video Source" className="h-14 px-8 rounded-2xl border-2 font-bold text-xs uppercase tracking-widest bg-white shadow-lg shadow-slate-100 hover:shadow-primary/10 transition-all cursor-pointer">
                     <span>{videoFile ? "Queue Replace" : "Select Source"}</span>
                   </Button>
                 </label>
                 {videoFile && (
-                  <Button onClick={handleProcessVideo} disabled={isProcessing} className="h-14 px-10 rounded-2xl bg-slate-900 text-white font-black text-xs uppercase tracking-widest shadow-2xl shadow-slate-200 group">
+                  <Button onClick={handleProcessVideo} aria-label="Start Processing Video" disabled={isProcessing} className="h-14 px-10 rounded-2xl bg-slate-900 text-white font-black text-xs uppercase tracking-widest shadow-2xl shadow-slate-200 group">
                     {isProcessing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Executing...</> : <><Play className="w-4 h-4 mr-3" /> Initialise Inference</>}
                   </Button>
                 )}
@@ -213,7 +238,7 @@ const Dashboard = () => {
 
             <Card className="p-8 rounded-[40px] border border-slate-200/50 bg-white space-y-8">
               <div className="space-y-3">
-                <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 ml-1 italic">Filter Context</Label>
+                <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 ml-1">Filter Context</Label>
                 <Select value={filterAction} onValueChange={setFilterAction}>
                   <SelectTrigger className="h-12 rounded-2xl bg-slate-50 border-slate-100 font-bold text-xs focus:ring-primary/20">
                     <SelectValue placeholder="All Categories" />
@@ -230,7 +255,7 @@ const Dashboard = () => {
                   <div className="text-[10px] font-bold uppercase tracking-widest text-primary">Portfolio Delta</div>
                   <Activity className="w-3.5 h-3.5 text-primary opacity-40" />
                 </div>
-                <div className="text-3xl font-black italic tracking-tighter text-slate-900">+{sessionStats.totalCredits} XP</div>
+                <div className="text-3xl font-black tracking-tighter text-slate-900">+{sessionStats.totalCredits} XP</div>
                 <Button variant="ghost" className="w-full h-10 font-black text-[9px] uppercase tracking-widest text-primary hover:bg-primary/10" onClick={() => navigate("/wallet")}>
                   View Ledger Details <ChevronRight className="w-3.5 h-3.5 ml-1" />
                 </Button>
@@ -243,8 +268,8 @@ const Dashboard = () => {
         {detectionResults.length > 0 && (
           <div className="pt-8 space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
             <div className="flex items-center justify-between px-2">
-              <h2 className="text-sm font-black italic tracking-tighter text-slate-900 uppercase">Live Audit Stream</h2>
-              <Button variant="ghost" size="sm" className="font-bold text-[10px] uppercase tracking-widest text-slate-400 hover:text-primary">
+              <h2 className="text-sm font-black tracking-tighter text-slate-900 uppercase">Live Audit Stream</h2>
+              <Button variant="ghost" size="sm" onClick={() => navigate("/events")} className="font-bold text-[10px] uppercase tracking-widest text-slate-400 hover:text-primary">
                 Archive History →
               </Button>
             </div>

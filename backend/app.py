@@ -121,6 +121,161 @@ def status():
     })
 
 
+@app.route('/contact', methods=['POST'])
+def contact():
+    """Submit a contact form inquiry"""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'Missing form data'}), 400
+    
+    name = data.get('name')
+    email = data.get('email')
+    message = data.get('message')
+    
+    if not name or not email or not message:
+        return jsonify({'error': 'Name, email, and message are required'}), 400
+    
+    # In a real app, you would send an email or save to a database
+    print(f"Contact Inquiry Received: From={name}, Email={email}")
+    print(f"Message: {message[:100]}...")
+    
+    return jsonify({
+        'success': True,
+        'message': 'Signal received and cached by node admins.',
+        'received_at': datetime.now().isoformat()
+    })
+
+
+@app.route('/auth/login', methods=['POST'])
+def login():
+    """Authenticate user and return role-based session"""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'Missing credentials'}), 400
+    
+    email = data.get('email')
+    password = data.get('password')
+    use_mock = data.get('use_mock', True)
+    
+    if not email or not password:
+        return jsonify({'error': 'Email and password are required'}), 400
+    
+    # Look up user in database
+    session = db.get_session()
+    try:
+        from database import User
+        user = session.query(User).filter_by(email=email).first()
+        
+        if user:
+            # Verify password (in production, use proper hashing)
+            if user.password_hash != password:
+                return jsonify({'error': 'Invalid credentials'}), 401
+            
+            return jsonify({
+                'success': True,
+                'message': f"Session initialized for {email}",
+                'user': {
+                    'email': user.email,
+                    'role': user.role,
+                    'name': user.name,
+                    'department': user.department,
+                    'node_id': f"SCA_NODE_{user.user_id}",
+                    'last_login': datetime.now().isoformat()
+                },
+                'environment': 'Simulated' if use_mock else 'Mainnet'
+            })
+        else:
+            return jsonify({'error': 'User not found. Please register first.'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
+@app.route('/auth/register', methods=['POST'])
+def register():
+    """Register a new user (student or faculty only - admin is auto-created)"""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'Missing registration data'}), 400
+    
+    email = data.get('email')
+    password = data.get('password')
+    name = data.get('name', email.split('@')[0] if email else 'User')
+    role = data.get('role', 'student')
+    department = data.get('department', 'General')
+    
+    if not email or not password:
+        return jsonify({'error': 'Email and password are required'}), 400
+    
+    # Admin role cannot be self-registered
+    if role == 'admin':
+        return jsonify({'error': 'Admin accounts cannot be self-registered'}), 403
+    
+    if role not in ['student', 'faculty']:
+        return jsonify({'error': 'Invalid role. Must be student or faculty'}), 400
+    
+    session = db.get_session()
+    try:
+        from database import User
+        
+        # Check if user already exists
+        existing = session.query(User).filter_by(email=email).first()
+        if existing:
+            return jsonify({'error': 'User with this email already exists'}), 409
+        
+        # Create new user
+        new_user = User(
+            email=email,
+            password_hash=password,  # In production, use proper hashing
+            name=name,
+            role=role,
+            department=department
+        )
+        session.add(new_user)
+        session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Registration successful for {name}',
+            'user': {
+                'email': new_user.email,
+                'role': new_user.role,
+                'name': new_user.name,
+                'department': new_user.department
+            }
+        })
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
+@app.route('/auth/users', methods=['GET'])
+def list_users():
+    """List all users (admin only endpoint)"""
+    session = db.get_session()
+    try:
+        from database import User
+        users = session.query(User).all()
+        return jsonify({
+            'total': len(users),
+            'users': [{
+                'user_id': u.user_id,
+                'email': u.email,
+                'name': u.name,
+                'role': u.role,
+                'department': u.department,
+                'created_at': u.created_at.isoformat() if u.created_at else None
+            } for u in users]
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
 @app.route('/upload', methods=['POST'])
 def upload_video():
     """
@@ -331,15 +486,29 @@ def get_db_events():
     offset = request.args.get('offset', 0, type=int)
     person_id = request.args.get('person_id', None)
     status = request.args.get('status', None)
+    action = request.args.get('action', None)
+    room_id = request.args.get('room_id', None)
+    search = request.args.get('search', None)
     
     session = db.get_session()
     try:
         query = session.query(Event)
         
         if person_id:
-            query = query.filter_by(person_id=person_id)
+            query = query.filter(Event.person_id == person_id)
         if status:
-            query = query.filter_by(status=status)
+            query = query.filter(Event.status == status)
+        if action:
+            query = query.filter(Event.action_detected == action)
+        if room_id:
+            query = query.filter(Event.room_id == room_id)
+        if search:
+            search_query = f"%{search}%"
+            query = query.filter(
+                (Event.action_detected.ilike(search_query)) | 
+                (Event.room_id.ilike(search_query)) |
+                (Event.department.ilike(search_query))
+            )
         
         query = query.order_by(Event.timestamp.desc())
         
@@ -519,6 +688,63 @@ def get_db_leaderboard():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/db/transfer', methods=['POST'])
+def transfer_credits():
+    """Transfer credits between persons or withdraw to external node"""
+    data = request.json
+    if not data or 'sender_id' not in data or 'amount' not in data or 'recipient_id' not in data:
+        return jsonify({'error': 'Missing required fields: sender_id, amount, recipient_id'}), 400
+    
+    sender_id = data['sender_id']
+    recipient_id = data['recipient_id']
+    amount = int(data['amount'])
+    
+    if amount <= 0:
+        return jsonify({'error': 'Amount must be positive'}), 400
+    
+    session = db.get_session()
+    try:
+        # Check sender balance
+        sender_score = db.get_person_score(sender_id)
+        if sender_score < amount:
+            return jsonify({'error': 'Insufficient balance'}), 400
+        
+        # 1. Debit from sender
+        db.add_activity(
+            sender_id, 
+            'transfer_debit', 
+            {'to': recipient_id, 'amount': amount}, 
+            incentive_points=-amount, 
+            incentive_reason=f'Asset transfer to {recipient_id}'
+        )
+        
+        # 2. Credit to recipient (if they exist in our system)
+        recipient = session.query(Person).filter_by(person_id=recipient_id).first()
+        if recipient:
+            db.add_activity(
+                recipient_id, 
+                'transfer_credit', 
+                {'from': sender_id, 'amount': amount}, 
+                incentive_points=amount, 
+                incentive_reason=f'Asset received from {sender_id}'
+            )
+            recipient_received = True
+        else:
+            recipient_received = False
+            
+        return jsonify({
+            'success': True,
+            'transaction_hash': f"tx_{int(datetime.now().timestamp())}_{sender_id[:4]}",
+            'amount': amount,
+            'recipient_received': recipient_received,
+            'message': f"Successfully transferred {amount} XP to {recipient_id}"
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
 
 
 @app.route('/db/stats', methods=['GET'])

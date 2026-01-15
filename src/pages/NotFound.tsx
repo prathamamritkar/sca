@@ -22,7 +22,7 @@ const NotFound = () => {
 
         <div className="space-y-4">
           <div className="text-[10px] font-black uppercase tracking-[0.4em] text-primary">Protocol Error 404</div>
-          <h1 className="text-4xl font-black italic tracking-tighter text-slate-900">Node Disconnected.</h1>
+          <h1 className="text-4xl font-black tracking-tighter text-slate-900">Node Disconnected.</h1>
           <p className="text-sm font-medium text-slate-500 max-w-xs mx-auto leading-relaxed">
             The coordinate <span className="text-slate-900 font-bold">"{location.pathname}"</span> is not recognized by the Campus Mainnet. The data may have been expunged or moved.
           </p>
@@ -45,7 +45,7 @@ const NotFound = () => {
 
         <div className="pt-8 border-t border-slate-200">
           <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1 opacity-50">SCA Diagnostic Service</div>
-          <div className="text-[8px] font-bold text-slate-300 italic">ERR_ROUTE_MISMATCH_v2.0</div>
+          <div className="text-[8px] font-bold text-slate-300">ERR_ROUTE_MISMATCH_v2.0</div>
         </div>
       </div>
     </div>

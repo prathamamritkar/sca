@@ -74,6 +74,9 @@ export default {
       transitionProperty: {
         'smooth': 'var(--transition-smooth)',
       },
+      fontFamily: {
+        sans: ['"Google Sans Flex"', "Inter", "system-ui", "sans-serif"],
+      },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",

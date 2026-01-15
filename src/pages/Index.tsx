@@ -28,12 +28,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/authStore";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { Loader2 } from "lucide-react";
+import * as cvApi from "@/services/cvApi";
 
 const Index = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { isAuthenticated, logout } = useAuthStore();
   const [currentMember, setCurrentMember] = useState(0);
+  const [isSending, setIsSending] = useState(false);
+  const [formState, setFormState] = useState({ name: "", email: "", message: "" });
+  const [networkStats, setNetworkStats] = useState({ totalCredits: 124502, totalEvents: 0 });
   const teamRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -54,9 +61,27 @@ const Index = () => {
       setCurrentMember((prev) => (prev + 1) % 3);
     }, 5000);
 
+    const fetchStats = async () => {
+      try {
+        const result = await cvApi.getStats();
+        if (result.success && result.data) {
+          setNetworkStats({
+            totalCredits: result.data.total_credits_distributed || 124502,
+            totalEvents: result.data.total_events || 0
+          });
+        }
+      } catch (e) {
+        console.error("Failed to fetch node stats", e);
+      }
+    };
+
+    fetchStats();
+    const statsTimer = setInterval(fetchStats, 60000); // Refresh every minute
+
     return () => {
       observer.disconnect();
-      clearInterval(timer);
+      if (timer) clearInterval(timer);
+      if (statsTimer) clearInterval(statsTimer);
     };
   }, []);
 
@@ -65,26 +90,54 @@ const Index = () => {
     else navigate("/auth");
   };
 
-  const handleContactSubmit = (e: React.FormEvent) => {
+  const handleContactSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast({
-      title: "Transmission Received",
-      description: "Your signal has been cached. Our node admins will sync with you shortly.",
-    });
+    setIsSending(true);
+
+    try {
+      const result = await cvApi.submitContact(formState);
+
+      if (result.success) {
+        toast({
+          title: "Transmission Received",
+          description: result.data?.message || "Your signal has been cached. Our node admins will sync with you shortly.",
+        });
+        setFormState({ name: "", email: "", message: "" });
+      } else {
+        toast({
+          title: "Transmission Error",
+          description: result.error || "Failed to dispatch signal to the network hub.",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Link Failure",
+        description: "Network node is currently unreachable. Please try again later.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSending(false);
+    }
   };
 
   return (
     <div className="min-h-screen bg-[#FDFDFD] text-slate-900 selection:bg-primary/10">
+      {/* Accessibility Skip Link */}
+      <a href="#mission" className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[200] focus:px-4 focus:py-2 focus:bg-primary focus:text-white focus:rounded-lg">
+        Skip to main content
+      </a>
+
       {/* Premium Glass Navbar */}
-      <header className="fixed top-0 left-0 right-0 z-[100] border-b border-border/40 bg-white/70 backdrop-blur-xl">
+      <header role="banner" className="fixed top-0 left-0 right-0 z-[100] border-b border-border/40 bg-white/70 backdrop-blur-xl">
         <div className="container mx-auto px-6 h-20 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3 group">
             <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20 group-hover:rotate-6 transition-transform">
               <Leaf className="w-6 h-6 text-white" />
             </div>
-            <div className="flex flex-col leading-none">
-              <span className="text-lg font-black tracking-tighter uppercase">Sustainable</span>
-              <span className="text-[10px] font-bold text-primary tracking-[0.3em] uppercase">Campus Automation</span>
+            <div className="flex flex-col leading-[0.9]">
+              <span className="text-lg font-black tracking-[0.05em] uppercase">Sustainable</span>
+              <span className="text-[12px] font-bold tracking-[0.1em] uppercase">Campus Automation</span>
             </div>
           </Link>
 
@@ -135,26 +188,44 @@ const Index = () => {
               <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">Green Energy.</span>
             </h1>
 
-            <p className="text-lg md:text-xl text-slate-500 font-medium max-w-2xl mx-auto leading-relaxed italic">
+            <p className="text-lg md:text-xl text-slate-500 font-medium max-w-2xl mx-auto leading-relaxed">
               Empowering campuses to eliminate 40% idle energy waste through real-time AI computer vision and decentralized blockchain rewards.
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-6 pt-4">
-              <Button onClick={handleCta} size="lg" className="h-16 px-10 rounded-2xl bg-slate-900 text-white hover:bg-slate-800 shadow-2xl shadow-slate-300 font-bold text-base group">
+              <Button onClick={handleCta} size="lg" aria-label="Access Detection Dashboard" className="h-16 px-10 rounded-2xl bg-slate-900 text-white hover:bg-slate-800 shadow-2xl shadow-slate-300 font-bold text-base group">
                 Access Dashboard
                 <ArrowRight className="ml-3 w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </Button>
               <div className="flex items-center gap-6">
                 <div className="flex -space-x-3">
-                  {[1, 2, 3].map(i => (
-                    <div key={i} className="w-10 h-10 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-[10px] font-black">
-                      {["SDG11", "SDG12", "SDG13"][i - 1]}
-                    </div>
+                  {[
+                    { tag: "SDG11", link: "https://sdgs.un.org/goals/goal11" },
+                    { tag: "SDG12", link: "https://sdgs.un.org/goals/goal12" },
+                    { tag: "SDG13", link: "https://sdgs.un.org/goals/goal13" }
+                  ].map((sdg, i) => (
+                    <a
+                      key={i}
+                      href={sdg.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-10 h-10 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-[10px] font-black hover:bg-primary hover:text-white transition-all hover:scale-110 z-10"
+                      title={`Learn more about ${sdg.tag}`}
+                    >
+                      {sdg.tag}
+                    </a>
                   ))}
                 </div>
                 <div className="text-left">
                   <div className="text-xs font-bold text-slate-900 uppercase tracking-widest leading-none">Certified Project</div>
-                  <div className="text-[10px] text-slate-400 font-medium">UN Sustainability Framework</div>
+                  <a
+                    href="https://sdgs.un.org/frameworks"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-slate-400 font-medium hover:text-primary transition-colors cursor-pointer"
+                  >
+                    UN Sustainability Framework
+                  </a>
                 </div>
               </div>
             </div>
@@ -262,7 +333,7 @@ const Index = () => {
             <div className="space-y-10">
               <div className="space-y-4">
                 <h2 className="text-xs font-bold text-primary uppercase tracking-[0.3em]">Recognition & Community</h2>
-                <h3 className="text-4xl md:text-5xl font-black tracking-tight leading-tight italic">
+                <h3 className="text-4xl md:text-5xl font-black tracking-tight leading-tight">
                   Compete for <br />the Future.
                 </h3>
               </div>
@@ -289,11 +360,15 @@ const Index = () => {
             <div className="relative">
               <Card className="bg-white/5 border-white/10 backdrop-blur-3xl p-8 rounded-[48px] border">
                 <div className="flex items-center gap-4 mb-8">
-                  <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center relative">
                     <Globe className="w-6 h-6 text-primary" />
+                    <div className="absolute inset-0 rounded-full border border-primary/40 animate-ping" />
                   </div>
                   <div>
-                    <div className="text-sm font-bold">Network Snapshot</div>
+                    <div className="text-sm font-bold flex items-center gap-2">
+                      Network Snapshot
+                      <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+                    </div>
                     <div className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Live Campus Node #1</div>
                   </div>
                 </div>
@@ -301,14 +376,14 @@ const Index = () => {
                 <div className="space-y-6">
                   <div className="flex justify-between items-end">
                     <div className="text-[10px] font-bold uppercase tracking-widest text-white/40">Total EP Generated</div>
-                    <div className="text-3xl font-black text-primary">124,502</div>
+                    <div className="text-3xl font-black text-primary tabular-nums">{networkStats.totalCredits.toLocaleString()}</div>
                   </div>
                   <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                    <div className="h-full bg-primary w-[74%] rounded-full" />
+                    <div className="h-full bg-primary rounded-full transition-all duration-1000" style={{ width: `${Math.min((networkStats.totalCredits / 200000) * 100, 100)}%` }} />
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-white/40 uppercase tracking-widest">
                     <span>Target Score: 200K</span>
-                    <span>74.1% Confirmed</span>
+                    <span>{Math.min(((networkStats.totalCredits / 200000) * 100), 100).toFixed(1)}% Confirmed</span>
                   </div>
                 </div>
               </Card>
@@ -322,8 +397,8 @@ const Index = () => {
         <div className="container mx-auto px-6">
           <div className="text-center max-w-2xl mx-auto mb-20 space-y-4">
             <h2 className="text-xs font-bold text-primary uppercase tracking-[0.3em]">The Innovators</h2>
-            <h3 className="text-4xl font-black tracking-tight text-slate-900 uppercase italic">Team Consortium</h3>
-            <p className="text-slate-500 font-medium italic">Developed by the Class of 2027, BE Computer Engineering at AISSMS COE, Pune.</p>
+            <h3 className="text-4xl font-black tracking-tight text-slate-900 uppercase">Team Consortium</h3>
+            <p className="text-slate-500 font-medium">Developed by the Class of 2027, BE Computer Engineering at AISSMS COE, Pune.</p>
           </div>
 
           <div className="max-w-xl mx-auto space-y-8">
@@ -333,7 +408,7 @@ const Index = () => {
               </div>
               <div className="space-y-2">
                 <div className="text-xs font-bold text-primary uppercase tracking-[0.4em] mb-2 leading-none opacity-60">Consortium Member</div>
-                <h4 className="text-3xl font-black italic tracking-tighter text-slate-900">
+                <h4 className="text-3xl font-black tracking-tighter text-slate-900">
                   {currentMember === 0 ? "Pratham Amritkar" : currentMember === 1 ? "Harshalee Malu" : "Balaji Alli"}
                 </h4>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">BE Computer 2027 • AISSMS COE, Pune</p>
@@ -342,16 +417,18 @@ const Index = () => {
 
             <div className="flex items-center justify-center gap-4">
               {[0, 1, 2].map((i) => (
-                <div
+                <button
                   key={i}
+                  onClick={() => setCurrentMember(i)}
+                  aria-label={`Switch to member ${i + 1}`}
                   className={cn(
-                    "h-2 rounded-full transition-all duration-500",
-                    currentMember === i ? "bg-primary w-10" : "bg-slate-200 w-2"
+                    "h-2 rounded-full transition-all duration-500 focus:outline-none focus:ring-2 focus:ring-primary/20",
+                    currentMember === i ? "bg-primary w-10" : "bg-slate-200 w-2 hover:bg-slate-300"
                   )}
                 />
               ))}
             </div>
-            <div className="text-center pt-4 uppercase tracking-[0.4em] text-[10px] font-bold text-slate-300 italic">
+            <div className="text-center pt-4 uppercase tracking-[0.4em] text-[10px] font-bold text-slate-300">
               Automated Identity Cycle
             </div>
           </div>
@@ -368,9 +445,9 @@ const Index = () => {
                   <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center">
                     <Terminal className="w-5 h-5 text-primary" />
                   </div>
-                  <h3 className="text-4xl font-black italic tracking-tighter text-slate-900 uppercase">Contact Node</h3>
+                  <h3 className="text-4xl font-black tracking-tighter text-slate-900 uppercase">Contact Node</h3>
                 </div>
-                <p className="text-lg text-slate-500 font-medium leading-relaxed italic max-w-md">
+                <p className="text-lg text-slate-500 font-medium leading-relaxed max-w-md">
                   Have questions about integration or technical audits? Reach out to the core development team at AISSMS COE.
                 </p>
               </div>
@@ -382,7 +459,7 @@ const Index = () => {
                   </div>
                   <div>
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Grid Email</div>
-                    <div className="text-lg font-black italic tracking-tighter text-slate-900">sca.project@aissmscoe.com</div>
+                    <div className="text-lg font-black tracking-tighter text-slate-900">sca.project@aissmscoe.com</div>
                   </div>
                 </div>
                 <div className="flex gap-6 group">
@@ -391,36 +468,68 @@ const Index = () => {
                   </div>
                   <div>
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Nexus Location</div>
-                    <div className="text-lg font-black italic tracking-tighter text-slate-900">AISSMS COE, Pune</div>
+                    <div className="text-lg font-black tracking-tighter text-slate-900">AISSMS COE, Pune</div>
                   </div>
                 </div>
               </div>
             </div>
 
             <Card className="p-10 md:p-12 rounded-[56px] bg-white border border-border/60 shadow-2xl shadow-slate-200/50">
-              <form onSubmit={handleContactSubmit} className="space-y-8">
+              <form onSubmit={handleContactSubmit} aria-label="Technical Inquiry Form" className="space-y-8">
                 <div className="space-y-6">
                   <div className="grid md:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-4 italic">Entity Name</Label>
-                      <Input placeholder="Team Member / Guest" className="h-14 px-8 bg-slate-50 border-none rounded-2xl font-bold text-sm" />
+                      <Label htmlFor="contact-name" className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-4">Entity Name</Label>
+                      <Input
+                        id="contact-name"
+                        placeholder="Team Member / Guest"
+                        required
+                        value={formState.name}
+                        onChange={(e) => setFormState(prev => ({ ...prev, name: e.target.value }))}
+                        className="h-14 px-8 bg-slate-50 border-none rounded-2xl font-bold text-sm focus-visible:ring-primary/20"
+                      />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-4 italic">Signal / Email</Label>
-                      <Input placeholder="nexus@domain.com" type="email" className="h-14 px-8 bg-slate-50 border-none rounded-2xl font-bold text-sm" />
+                      <Label htmlFor="contact-email" className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-4">Signal / Email</Label>
+                      <Input
+                        id="contact-email"
+                        placeholder="nexus@domain.com"
+                        type="email"
+                        required
+                        value={formState.email}
+                        onChange={(e) => setFormState(prev => ({ ...prev, email: e.target.value }))}
+                        className="h-14 px-8 bg-slate-50 border-none rounded-2xl font-bold text-sm focus-visible:ring-primary/20"
+                      />
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-4 italic">Message Payload</Label>
+                    <Label htmlFor="contact-message" className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-4">Message Payload</Label>
                     <textarea
+                      id="contact-message"
+                      required
+                      value={formState.message}
+                      onChange={(e) => setFormState(prev => ({ ...prev, message: e.target.value }))}
                       className="w-full min-h-[140px] p-8 bg-slate-50 border-none rounded-[32px] font-bold text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all resize-none"
                       placeholder="Describe your technical inquiry..."
                     />
                   </div>
                 </div>
 
-                <Button type="submit" className="w-full h-16 rounded-[28px] bg-slate-900 text-white font-black text-xs uppercase tracking-widest shadow-2xl shadow-slate-200 transition-all active:scale-95">
-                  <Send className="w-4 h-4 mr-3" /> Dispatch Signal →
+                <Button
+                  type="submit"
+                  disabled={isSending}
+                  aria-label="Dispatch Transmission"
+                  className="w-full h-16 rounded-[28px] bg-slate-900 text-white font-black text-xs uppercase tracking-widest shadow-2xl shadow-slate-200 transition-all active:scale-95 disabled:opacity-70"
+                >
+                  {isSending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-3 animate-spin" /> Transmitting Signal...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4 mr-3" /> Dispatch Signal →
+                    </>
+                  )}
                 </Button>
               </form>
             </Card>
@@ -434,15 +543,15 @@ const Index = () => {
           <div className="max-w-5xl mx-auto rounded-[64px] bg-gradient-to-br from-slate-900 to-slate-800 p-16 md:p-24 text-center text-white relative shadow-3xl shadow-slate-400 overflow-hidden">
             <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20" />
             <div className="relative z-10 space-y-10">
-              <h2 className="text-4xl md:text-6xl font-black italic tracking-tighter leading-none">
+              <h2 className="text-4xl md:text-6xl font-black tracking-tighter leading-none">
                 Ready to Sync <br />Your Impact?
               </h2>
               <p className="max-w-xl mx-auto text-white/60 font-medium">
                 Join the decentralized movement of campus conservation. Register your node today and start earning EcoPoints for every watt you save.
               </p>
               <div className="flex justify-center gap-4">
-                <Button onClick={() => navigate("/auth")} size="lg" className="h-16 px-12 rounded-2xl bg-primary text-slate-900 hover:bg-primary/90 font-black text-base shadow-xl shadow-primary/20">
-                  Register Now
+                <Button onClick={handleCta} size="lg" className="h-16 px-12 rounded-2xl bg-primary text-slate-900 hover:bg-primary/90 font-black text-base shadow-xl shadow-primary/20">
+                  {isAuthenticated ? "Enter Dashboard" : "Register Now"}
                 </Button>
               </div>
             </div>
@@ -455,13 +564,11 @@ const Index = () => {
         <div className="container mx-auto px-6">
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-12 mb-20">
             <div className="col-span-2 space-y-6">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center">
-                  <Leaf className="w-5 h-5 text-white" />
-                </div>
-                <span className="text-lg font-black tracking-tighter uppercase text-slate-900">Sustainable</span>
+              <div className="flex flex-col leading-[0.9]">
+                <span className="text-lg font-black tracking-[0.05em] uppercase text-slate-900">Sustainable</span>
+                <span className="text-[12px] font-bold tracking-[0.1em] text-slate-900 uppercase">Campus Automation</span>
               </div>
-              <p className="text-slate-400 text-sm max-w-xs font-medium italic">
+              <p className="text-slate-400 text-sm max-w-xs font-medium">
                 Pioneering the intersection of computer vision, blockchain, and environmental conservation to build the campus of 2030.
               </p>
             </div>
@@ -507,19 +614,5 @@ const Index = () => {
     </div>
   );
 };
-
-// Internal Badge Component for landing page
-const Badge = ({ children, className }: { children: React.ReactNode, className?: string }) => (
-  <div className={cn("inline-flex items-center justify-center py-1 px-3 border rounded-md text-xs", className)}>
-    {children}
-  </div>
-);
-
-// Card helper
-const Card = ({ children, className }: { children: React.ReactNode, className?: string }) => (
-  <div className={cn("bg-card text-card-foreground shadow-sm", className)}>
-    {children}
-  </div>
-);
 
 export default Index;

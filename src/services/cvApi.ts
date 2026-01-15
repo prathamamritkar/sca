@@ -239,15 +239,19 @@ export async function getEvents(params?: {
     limit?: number;
     room_id?: string;
     action_type?: string;
+    action?: string;
     department?: string;
     status?: string;
+    search?: string;
 }): Promise<ApiResponse<{ events: DetectionEvent[]; total: number }>> {
     const searchParams = new URLSearchParams();
     if (params?.limit) searchParams.set('limit', String(params.limit));
     if (params?.room_id) searchParams.set('room_id', params.room_id);
     if (params?.action_type) searchParams.set('action_type', params.action_type);
+    if (params?.action) searchParams.set('action', params.action);
     if (params?.department) searchParams.set('department', params.department);
     if (params?.status) searchParams.set('status', params.status);
+    if (params?.search) searchParams.set('search', params.search);
 
     const query = searchParams.toString();
     return apiRequest<{ events: DetectionEvent[]; total: number }>(
@@ -409,6 +413,64 @@ export async function listUploads(): Promise<ApiResponse<{ files: string[] }>> {
  */
 export async function listResults(): Promise<ApiResponse<{ files: string[] }>> {
     return apiRequest<{ files: string[] }>('/list/results');
+}
+
+/**
+ * Submit a contact form inquiry
+ */
+export async function submitContact(data: { name: string; email: string; message: string }): Promise<ApiResponse<{ success: boolean; message: string }>> {
+    return apiRequest<{ success: boolean; message: string }>('/contact', {
+        method: 'POST',
+        body: JSON.stringify(data),
+    });
+}
+
+/**
+ * Perform identity authentication (actual end-to-end)
+ */
+export async function authLogin(credentials: any): Promise<ApiResponse<{ success: boolean; user: any; environment: string }>> {
+    return apiRequest<{ success: boolean; user: any; environment: string }>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(credentials),
+    });
+}
+
+/**
+ * Transfer credits between persons or withdraw to external node
+ */
+export async function transferCredits(senderId: string, recipientId: string, amount: number): Promise<ApiResponse<{
+    success: boolean;
+    transaction_hash: string;
+    amount: number;
+    message: string;
+}>> {
+    return apiRequest<{ success: boolean; transaction_hash: string; amount: number; message: string }>('/db/transfer', {
+        method: 'POST',
+        body: JSON.stringify({ sender_id: senderId, recipient_id: recipientId, amount }),
+    });
+}
+
+/**
+ * Register a new user (student or faculty only)
+ */
+export async function authRegister(data: {
+    email: string;
+    password: string;
+    name?: string;
+    role: 'student' | 'faculty';
+    department?: string;
+}): Promise<ApiResponse<{ success: boolean; user: any; message: string }>> {
+    return apiRequest<{ success: boolean; user: any; message: string }>('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify(data),
+    });
+}
+
+/**
+ * Get list of users (admin only)
+ */
+export async function getUsers(): Promise<ApiResponse<{ users: any[]; total: number }>> {
+    return apiRequest<{ users: any[]; total: number }>('/auth/users');
 }
 
 // Export the API base URL for debugging

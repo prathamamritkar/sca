@@ -128,10 +128,10 @@ const Admin = () => {
               <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center border border-slate-700">
                 <ShieldCheck className="w-5 h-5 text-primary" />
               </div>
-              <h1 className="text-4xl font-black italic tracking-tighter text-slate-900 uppercase">Review Center</h1>
+              <h1 className="text-4xl font-black tracking-tighter text-slate-900 uppercase">Admin Center</h1>
             </div>
-            <p className="text-slate-500 font-medium max-w-2xl text-sm italic leading-relaxed">
-              Manual verification node for low-confidence detections. Governance layer ensures 100% data fidelity before block finalization.
+            <p className="text-slate-500 font-medium max-w-2xl text-sm leading-relaxed">
+              System governance for audit verification. Review and finalize detections to maintain ledger integrity.
             </p>
           </div>
 
@@ -158,7 +158,7 @@ const Admin = () => {
                 {stat.icon}
               </div>
               <div className="space-y-1">
-                <div className={cn("text-2xl font-black italic tracking-tighter", stat.color)}>{stat.value}</div>
+                <div className={cn("text-2xl font-black tracking-tighter", stat.color)}>{stat.value}</div>
                 <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">{stat.label}</div>
               </div>
             </Card>
@@ -171,7 +171,7 @@ const Admin = () => {
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400">
               <Terminal className="w-4 h-4" /> Discrepancy Stream
             </div>
-            <Badge variant="outline" className="h-5 px-3 text-[9px] font-bold tracking-tighter italic border-slate-200 text-slate-400">SYNC_OK</Badge>
+            <Badge variant="outline" className="h-5 px-3 text-[9px] font-bold tracking-tighter border-slate-200 text-slate-400">SYNC_OK</Badge>
           </div>
 
           <div className="grid gap-4">
@@ -183,7 +183,7 @@ const Admin = () => {
             ) : pendingActions.length === 0 ? (
               <Card className="py-20 text-center border-dashed border-2 bg-slate-50/50 rounded-[40px]">
                 <CheckCircle2 className="w-12 h-12 text-success/20 mx-auto mb-4" />
-                <h3 className="text-sm font-bold text-slate-900 italic">Queue Fully Synchronized</h3>
+                <h3 className="text-sm font-bold text-slate-900">Queue Fully Synchronized</h3>
                 <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mt-1">No deviations requiring manual intervention.</p>
               </Card>
             ) : (
@@ -198,7 +198,7 @@ const Admin = () => {
                     </div>
                     <div className="space-y-1.5">
                       <div className="flex items-center gap-3 flex-wrap">
-                        <span className="text-base font-black italic tracking-tighter text-slate-900">{action.action.replace(/_/g, ' ').toUpperCase()}</span>
+                        <span className="text-base font-black tracking-tighter text-slate-900">{action.action.replace(/_/g, ' ').toUpperCase()}</span>
                         <Badge className={cn(
                           "h-5 text-[9px] font-bold uppercase tracking-tighter",
                           action.confidence >= 0.8 ? "bg-success/10 text-success border-success/20" : "bg-warning/10 text-warning border-warning/20"
@@ -215,7 +215,7 @@ const Admin = () => {
                   </div>
 
                   <div className="flex items-center gap-3 self-end md:self-center">
-                    <Button variant="ghost" size="sm" onClick={() => { setSelectedAction(action); setIsVideoModalOpen(true); }} className="h-11 px-6 rounded-2xl font-bold text-[10px] uppercase tracking-widest text-slate-400 hover:text-slate-900 italic">
+                    <Button variant="ghost" size="sm" aria-label={`Audit clip for ${action.action}`} onClick={() => { setSelectedAction(action); setIsVideoModalOpen(true); }} className="h-11 px-6 rounded-2xl font-bold text-[10px] uppercase tracking-widest text-slate-400 hover:text-slate-900">
                       Audit Clip
                     </Button>
                     <div className="flex items-center gap-2 pl-4 border-l border-slate-100">
@@ -243,7 +243,7 @@ const Admin = () => {
               <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
                 <Eye className="w-5 h-5 text-slate-900" />
               </div>
-              <DialogTitle className="text-2xl font-black italic tracking-tighter">Visual Analytics Review</DialogTitle>
+              <DialogTitle className="text-2xl font-black tracking-tighter">Visual Analytics Review</DialogTitle>
             </div>
             <DialogDescription className="text-xs font-bold text-slate-400 uppercase tracking-widest">Inference Source Analysis #TX_{selectedAction?.id}</DialogDescription>
           </DialogHeader>
@@ -257,7 +257,7 @@ const Admin = () => {
               </div>
               <div className="absolute top-6 left-6 flex flex-col gap-2">
                 <Badge className="bg-primary hover:bg-primary border-none text-[9px] font-black uppercase tracking-widest h-6">Live Link</Badge>
-                <Badge className="bg-white/10 backdrop-blur text-white border-none text-[9px] font-black uppercase tracking-widest h-6 italic">Object: {selectedAction?.action}</Badge>
+                <Badge className="bg-white/10 backdrop-blur text-white border-none text-[9px] font-black uppercase tracking-widest h-6">Object: {selectedAction?.action}</Badge>
               </div>
               {/* Simulated Waveform Overlay */}
               <div className="absolute bottom-6 left-6 right-6 h-12 flex items-end justify-between px-4">
@@ -270,17 +270,17 @@ const Admin = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="p-6 bg-slate-50 rounded-3xl space-y-1">
                 <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Inference Engine</div>
-                <div className="text-xs font-black italic">YOLOv8-Small-Quant</div>
+                <div className="text-xs font-black">YOLOv8-Small-Quant</div>
               </div>
               <div className="p-6 bg-slate-50 rounded-3xl space-y-1">
                 <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Frame Latency</div>
-                <div className="text-xs font-black italic">14.2ms @ 60fps</div>
+                <div className="text-xs font-black">14.2ms @ 60fps</div>
               </div>
             </div>
 
             <div className="flex justify-end gap-3 pt-6">
-              <Button variant="ghost" onClick={() => setIsVideoModalOpen(false)} className="font-bold text-xs uppercase tracking-widest italic h-12 px-8">Dismiss Audit</Button>
-              <Button onClick={() => { handleAudit(selectedAction!.id, 'verified'); setIsVideoModalOpen(false); }} className="bg-slate-900 text-white font-black text-xs uppercase tracking-widest h-12 px-10 rounded-2xl italic shadow-2xl shadow-slate-200">
+              <Button variant="ghost" onClick={() => setIsVideoModalOpen(false)} className="font-bold text-xs uppercase tracking-widest h-12 px-8">Dismiss Audit</Button>
+              <Button onClick={() => { handleAudit(selectedAction!.id, 'verified'); setIsVideoModalOpen(false); }} className="bg-slate-900 text-white font-black text-xs uppercase tracking-widest h-12 px-10 rounded-2xl shadow-2xl shadow-slate-200">
                 Confirm Signal →
               </Button>
             </div>
