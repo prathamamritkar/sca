@@ -2,7 +2,7 @@
 Database models and configuration for SCA CV Module
 Uses SQLAlchemy with SQLite
 """
-from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, ForeignKey, JSON, CheckConstraint
+from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, ForeignKey, JSON, CheckConstraint, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker, scoped_session
 from datetime import datetime
@@ -27,10 +27,27 @@ class Person(Base):
     face_image_path = Column(String(255), nullable=True)
     detection_method = Column(String(50), default='appearance')  # 'face' or 'appearance'
     total_credits_earned = Column(Float, default=0.0)  # Cumulative blockchain credits
+    wallet_address = Column(String(42), nullable=True)  # Ethereum/Polygon address
     
     # Relationship to events
     events = relationship('Event', back_populates='person', cascade='all, delete-orphan')
     activities = relationship('PersonActivity', back_populates='person', cascade='all, delete-orphan')
+    
+    def to_dict(self):
+        """Convert person to dictionary"""
+        return {
+            'person_id': self.person_id,
+            'student_id': self.student_id,
+            'department': self.department,
+            'user_type': self.user_type,
+            'first_seen': self.first_seen.isoformat() if self.first_seen else None,
+            'last_seen': self.last_seen.isoformat() if self.last_seen else None,
+            'total_detections': self.total_detections,
+            'face_image_path': self.face_image_path,
+            'detection_method': self.detection_method,
+            'total_credits': self.total_credits_earned,
+            'wallet_address': self.wallet_address
+        }
     
     def __repr__(self):
         return f"<Person(person_id='{self.person_id}', dept='{self.department}', credits={self.total_credits_earned})>"
@@ -195,12 +212,13 @@ class User(Base):
 class Database:
     """Database management class"""
     
-    def __init__(self, db_url='sqlite:///outputs/sca_events.db'):
+    def __init__(self, db_url='sqlite:///outputs/sca_events.db', auto_create_admin=True):
         """
         Initialize database connection
         
         Args:
             db_url: SQLAlchemy database URL
+            auto_create_admin: Whether to auto-create admin user if none exist
         """
         # Enable WAL mode for better concurrent access and performance
         self.engine = create_engine(
@@ -219,14 +237,15 @@ class Database:
         
         # Enable SQLite optimizations
         with self.engine.connect() as conn:
-            conn.execute('PRAGMA journal_mode=WAL')
-            conn.execute('PRAGMA synchronous=NORMAL')
-            conn.execute('PRAGMA cache_size=-64000')
-            conn.execute('PRAGMA busy_timeout=30000')  # 30 seconds
+            conn.execute(text('PRAGMA journal_mode=WAL'))
+            conn.execute(text('PRAGMA synchronous=NORMAL'))
+            conn.execute(text('PRAGMA cache_size=-64000'))
+            conn.execute(text('PRAGMA busy_timeout=30000'))  # 30 seconds
             conn.commit()
         
         # Auto-create admin user if no users exist
-        self._ensure_admin_exists()
+        if auto_create_admin:
+            self._ensure_admin_exists()
     
     def _ensure_admin_exists(self):
         """Create default admin user if no users exist in the system"""
@@ -234,10 +253,17 @@ class Database:
         try:
             user_count = session.query(User).count()
             if user_count == 0:
+                try:
+                    from jwt_auth import hash_password
+                    hashed_admin_password = hash_password('admin123')
+                except ImportError:
+                    # Fallback if jwt_auth is not available in current context
+                    hashed_admin_password = 'admin123'
+                
                 # Create the system admin as the first user
                 admin_user = User(
                     email='admin@sca.campus',
-                    password_hash='admin123',  # In production, use proper hashing
+                    password_hash=hashed_admin_password,  # Securely hashed
                     name='System Administrator',
                     role='admin',
                     department='Administration',
@@ -353,6 +379,25 @@ class Database:
             )
             
             session.add(activity)
+            
+            # Update the Person's cached total_credits_earned
+            person = session.query(Person).filter_by(person_id=person_id).first()
+            if person:
+                person.total_credits_earned = (person.total_credits_earned or 0) + incentive_points
+                person.last_seen = datetime.now()
+                person.total_detections += 1
+            else:
+                # If person doesn't exist, create one
+                new_person = Person(
+                    person_id=person_id,
+                    total_credits_earned=float(incentive_points),
+                    total_detections=1,
+                    first_seen=datetime.now(),
+                    last_seen=datetime.now(),
+                    department=room_id.split('_')[0] if room_id and '_' in room_id else 'Universal'
+                )
+                session.add(new_person)
+            
             session.commit()
             # Refresh to get auto-generated ID, then expunge
             session.refresh(activity)
@@ -411,29 +456,50 @@ class Database:
             session.close()
     
     def get_leaderboard(self):
-        """Get leaderboard with scores and person details"""
+        """Get person leaderboard with scores and energy impact - Optimized"""
+        print("Interrogating database for node census...")
         session = self.get_session()
         try:
             from sqlalchemy import func
             
-            # Join PersonActivity with Person to get department and other info
-            scores = session.query(
-                PersonActivity.person_id,
-                func.sum(PersonActivity.incentive_points).label('total_credits'),
-                func.count(PersonActivity.activity_id).label('total_activities'),
-                Person.department
-            ).join(Person, PersonActivity.person_id == Person.person_id) \
-             .group_by(PersonActivity.person_id, Person.department).all()
+            # Get energy impact per person from Events
+            energy_stats = session.query(
+                Event.person_id,
+                func.sum(Event.energy_saved_estimate).label('energy_saved'),
+                func.count(Event.event_id).label('event_count')
+            ).filter(Event.person_id.isnot(None)) \
+             .group_by(Event.person_id).all()
             
-            leaderboard = [
-                {
-                    'person_id': score[0],
-                    'total_credits': score[1] or 0,
-                    'total_activities': score[2],
-                    'department': score[3] or "Universal"
-                }
-                for score in scores
-            ]
+            energy_map = {row.person_id: (float(row.energy_saved or 0), row.event_count) for row in energy_stats}
+            
+            # Get activity count per person
+            activity_counts = session.query(
+                PersonActivity.person_id,
+                func.count(PersonActivity.activity_id).label('act_count')
+            ).group_by(PersonActivity.person_id).all()
+            
+            activity_map = {row.person_id: row.act_count for row in activity_counts}
+            
+            # Get all persons with their cached credits
+            persons = session.query(Person).all()
+            
+            leaderboard = []
+            for person in persons:
+                person_id = person.person_id
+                user = session.query(User).filter_by(email=person_id).first()
+                
+                energy_saved, event_count = energy_map.get(person_id, (0.0, 0))
+                total_activities = activity_map.get(person_id, event_count) # Fallback to event count
+                
+                leaderboard.append({
+                    'person_id': person_id,
+                    'name': user.name if user and user.name else (person.student_id or person_id),
+                    'total_credits': float(person.total_credits_earned or 0),
+                    'total_activities': total_activities,
+                    'department': person.department or (user.department if user else "Universal"),
+                    'total_energy_saved': energy_saved,
+                    'last_seen': person.last_seen.isoformat() if person.last_seen else None
+                })
             
             leaderboard.sort(key=lambda x: x['total_credits'], reverse=True)
             return leaderboard
@@ -460,11 +526,23 @@ class Database:
             # Total events for accuracy context
             total_verified = session.query(Event).filter_by(status='verified').count()
             
+            # Get database file size
+            import os
+            db_size_kb = 0
+            try:
+                # Extract path from sqlite URL (e.g., 'sqlite:///path/to/db')
+                db_path = str(self.engine.url).replace('sqlite:///', '')
+                if os.path.exists(db_path):
+                    db_size_kb = os.path.getsize(db_path) / 1024
+            except:
+                pass
+                
             return {
                 'pending_count': pending_count,
                 'hc_count': hc_count,
                 'avg_accuracy': round(float(avg_conf) * 100, 1),
-                'total_verified': total_verified
+                'total_verified': total_verified,
+                'db_size_kb': round(db_size_kb, 1)
             }
         finally:
             session.close()

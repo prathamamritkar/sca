@@ -26,7 +26,6 @@ import {
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useToast } from "@/hooks/use-toast";
-import { useAuthStore } from "@/store/authStore";
 import {
   Dialog,
   DialogContent,
@@ -55,7 +54,6 @@ const Leaderboard = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUser, setSelectedUser] = useState<LeaderboardEntry | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const { useMockData } = useAuthStore();
   const { toast } = useToast();
 
   const getBadgeForRank = (rank: number): string => rank === 1 ? "Eco Champion" : rank === 2 ? "Sustainability Hero" : rank === 3 ? "Green Guardian" : "Eco Warrior";
@@ -67,14 +65,14 @@ const Leaderboard = () => {
       if (result.success && result.data) {
         setLeaderboard(result.data.leaderboard.map((e: any, i: number) => ({
           id: e.person_id,
-          name: e.person_id,
+          name: e.name || e.person_id,
           points: e.total_credits || 0,
           actions: e.total_activities || 0,
           rank: i + 1,
           badge: getBadgeForRank(i + 1),
           department: e.department || "Universal",
-          weeklyGain: Math.floor((e.total_credits || 0) * 0.12),
-          energySaved: Math.floor((e.total_credits || 0) * 8.5)
+          weeklyGain: Math.floor((e.total_credits || 0) * 0.12), // Still a relative trend
+          energySaved: e.total_energy_saved || 0
         })));
       } else {
         toast({
@@ -154,7 +152,7 @@ const Leaderboard = () => {
         {!isLoading && filteredLeaderboard.length >= 3 && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pt-8 items-end">
             {/* Rank 2 */}
-            <Card role="article" aria-label={`Rank 2: ${filteredLeaderboard[1].name}`} className="relative p-10 pb-12 rounded-[48px] border-slate-200/60 bg-white shadow-xl shadow-slate-100 flex flex-col items-center text-center space-y-6 order-2 md:order-1 h-[280px] justify-between group overflow-hidden">
+            <Card role="article" aria-label={`Rank 2: ${filteredLeaderboard[1].name}`} className="relative p-6 md:p-10 pb-8 md:pb-12 rounded-[32px] md:rounded-[48px] border-slate-200/60 bg-white shadow-xl shadow-slate-100 flex flex-col items-center text-center space-y-4 md:space-y-6 order-2 md:order-1 min-h-[200px] md:min-h-[280px] justify-between group overflow-hidden">
               <div className="absolute top-0 left-0 right-0 h-1.5 bg-slate-300 opacity-20" />
               <div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center border-4 border-white shadow-lg shadow-slate-200">
                 <span className="text-2xl font-black text-slate-400">2</span>
@@ -170,7 +168,7 @@ const Leaderboard = () => {
             </Card>
 
             {/* Rank 1 */}
-            <Card role="article" aria-label={`Rank 1: ${filteredLeaderboard[0].name}`} className="relative p-12 pb-16 rounded-[64px] border-2 border-primary/20 bg-slate-900 text-white shadow-3xl shadow-primary/10 flex flex-col items-center text-center space-y-8 order-1 md:order-2 h-[340px] justify-between group overflow-hidden">
+            <Card role="article" aria-label={`Rank 1: ${filteredLeaderboard[0].name}`} className="relative p-8 md:p-12 pb-10 md:pb-16 rounded-[40px] md:rounded-[64px] border-2 border-primary/20 bg-slate-900 text-white shadow-3xl shadow-primary/10 flex flex-col items-center text-center space-y-6 md:space-y-8 order-1 md:order-2 min-h-[260px] md:min-h-[340px] justify-between group overflow-hidden">
               <div className="absolute inset-0 bg-primary/5 opacity-20 pointer-events-none" />
               <div className="w-24 h-24 rounded-full bg-primary flex items-center justify-center border-4 border-slate-900 shadow-2xl shadow-primary/20 scale-110">
                 <Crown className="w-12 h-12 text-slate-900 fill-current" />
@@ -187,7 +185,7 @@ const Leaderboard = () => {
             </Card>
 
             {/* Rank 3 */}
-            <Card role="article" aria-label={`Rank 3: ${filteredLeaderboard[2].name}`} className="relative p-10 pb-12 rounded-[48px] border-slate-200/60 bg-white shadow-xl shadow-slate-100 flex flex-col items-center text-center space-y-6 order-3 h-[260px] justify-between group overflow-hidden">
+            <Card role="article" aria-label={`Rank 3: ${filteredLeaderboard[2].name}`} className="relative p-6 md:p-10 pb-8 md:pb-12 rounded-[32px] md:rounded-[48px] border-slate-200/60 bg-white shadow-xl shadow-slate-100 flex flex-col items-center text-center space-y-4 md:space-y-6 order-3 min-h-[180px] md:min-h-[260px] justify-between group overflow-hidden">
               <div className="absolute top-0 left-0 right-0 h-1.5 bg-amber-600/20 opacity-20" />
               <div className="w-20 h-20 rounded-full bg-amber-600/10 flex items-center justify-center border-4 border-white shadow-lg shadow-amber-600/10">
                 <span className="text-2xl font-black text-amber-600">3</span>
@@ -220,7 +218,7 @@ const Leaderboard = () => {
                 id="search-census"
                 placeholder="Search Node Identity..."
                 value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-11 w-80 rounded-2xl bg-slate-50 border-none font-bold text-xs pl-12"
+                className="h-11 w-full md:w-80 rounded-2xl bg-slate-50 border-none font-bold text-xs pl-12"
               />
             </div>
           </div>
@@ -259,7 +257,7 @@ const Leaderboard = () => {
                       <div className="text-base font-black text-slate-900 tracking-tighter">+{user.weeklyGain} <span className="text-[10px] uppercase text-success">XP</span></div>
                       <div className="text-[8px] font-bold text-slate-300 uppercase tracking-widest leading-none">Weekly Delta</div>
                     </div>
-                    <div className="text-right min-w-[100px]">
+                    <div className="text-right min-w-20 md:min-w-24">
                       <div className="text-2xl font-black tracking-tighter text-slate-900">{user.points.toLocaleString()}</div>
                       <div className="text-[8px] font-bold text-slate-300 uppercase tracking-widest leading-none opacity-60">Total Accrued</div>
                     </div>

@@ -3,6 +3,8 @@
  * Handles all communication with the Python Flask backend
  */
 
+import { getAuthHeader, useAuthStore } from '@/store/authStore';
+
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 // Types matching the backend response structure
@@ -23,6 +25,8 @@ export interface DetectionEvent {
     overall_confidence: number;
     action_confidence: number;
     recognized_persons?: RecognizedPerson[];
+    video_file?: string | null;
+    person_id?: string | null;
 }
 
 export interface DeviceInfo {
@@ -89,9 +93,12 @@ export interface LiveMetrics {
 
 export interface BlockchainCredits {
     total_credits: number;
+    total_blockchain_credits?: number;
+    credits_per_kwh?: number;
     credits_by_person: Record<string, number>;
     credits_by_department: Record<string, number>;
     recent_transactions: CreditTransaction[];
+    recent_history?: any[];
 }
 
 export interface CreditTransaction {
@@ -131,6 +138,9 @@ interface ApiResponse<T> {
     success: boolean;
 }
 
+/**
+ * Base API request function (no authentication)
+ */
 async function apiRequest<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -164,6 +174,62 @@ async function apiRequest<T>(
     }
 }
 
+/**
+ * Authenticated API request function (includes JWT in headers)
+ * Handles automatic token refresh if access token is expired
+ */
+async function authenticatedApiRequest<T>(
+    endpoint: string,
+    options: RequestInit = {}
+): Promise<ApiResponse<T>> {
+    const authStore = useAuthStore.getState();
+    const authHeader = authStore.getAuthHeader();
+
+    const response = await apiRequest<T>(endpoint, {
+        ...options,
+        headers: {
+            ...authHeader,
+            ...options.headers,
+        },
+    });
+
+    // If 401 Unauthorized, try to refresh token
+    if (!response.success && response.error?.includes('401')) {
+        const refreshToken = authStore.tokens.refreshToken;
+
+        if (refreshToken) {
+            console.log('Access token expired, attempting refresh...');
+            const refreshResult = await authRefreshToken(refreshToken);
+
+            if (refreshResult.success && refreshResult.data?.access_token) {
+                console.log('Token refreshed successfully, retrying request.');
+                const newAccessToken = refreshResult.data.access_token;
+
+                // Update store with new token
+                authStore.updateAccessToken(newAccessToken);
+
+                // Retry the original request with new token
+                return apiRequest<T>(endpoint, {
+                    ...options,
+                    headers: {
+                        'Authorization': `Bearer ${newAccessToken}`,
+                        ...options.headers,
+                    },
+                });
+            } else {
+                console.error('Token refresh failed.');
+                // Handle refresh failure (potentially logout)
+                if (!refreshResult.success) {
+                    console.log('Force logout due to refresh failure');
+                    authStore.logout();
+                }
+            }
+        }
+    }
+
+    return response;
+}
+
 // ============================================================
 // VIDEO PROCESSING API
 // ============================================================
@@ -175,10 +241,14 @@ export async function uploadVideo(file: File): Promise<ApiResponse<{ filename: s
     const formData = new FormData();
     formData.append('file', file);
 
+    const authHeader = getAuthHeader();
     try {
         const response = await fetch(`${API_BASE}/upload`, {
             method: 'POST',
             body: formData,
+            headers: {
+                ...authHeader,
+            },
         });
 
         if (!response.ok) {
@@ -225,7 +295,7 @@ export async function processVideo(
  * Get processing results for a video
  */
 export async function getResults(filename: string): Promise<ApiResponse<{ events: DetectionEvent[] }>> {
-    return apiRequest<{ events: DetectionEvent[] }>(`/results/${filename}`);
+    return authenticatedApiRequest<{ events: DetectionEvent[] }>(`/results/${filename}`);
 }
 
 // ============================================================
@@ -237,6 +307,7 @@ export async function getResults(filename: string): Promise<ApiResponse<{ events
  */
 export async function getEvents(params?: {
     limit?: number;
+    offset?: number;
     room_id?: string;
     action_type?: string;
     action?: string;
@@ -246,6 +317,7 @@ export async function getEvents(params?: {
 }): Promise<ApiResponse<{ events: DetectionEvent[]; total: number }>> {
     const searchParams = new URLSearchParams();
     if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.offset) searchParams.set('offset', String(params.offset));
     if (params?.room_id) searchParams.set('room_id', params.room_id);
     if (params?.action_type) searchParams.set('action_type', params.action_type);
     if (params?.action) searchParams.set('action', params.action);
@@ -254,7 +326,7 @@ export async function getEvents(params?: {
     if (params?.search) searchParams.set('search', params.search);
 
     const query = searchParams.toString();
-    return apiRequest<{ events: DetectionEvent[]; total: number }>(
+    return authenticatedApiRequest<{ events: DetectionEvent[]; total: number }>(
         `/db/events${query ? `?${query}` : ''}`
     );
 }
@@ -263,38 +335,74 @@ export async function getEvents(params?: {
  * Update event verification status
  */
 export async function updateEventStatus(eventId: number, status: string): Promise<ApiResponse<DetectionEvent>> {
-    return apiRequest<DetectionEvent>(`/db/events/${eventId}/status`, {
+    return authenticatedApiRequest<DetectionEvent>(`/db/events/${eventId}/status`, {
         method: 'POST',
         body: JSON.stringify({ status }),
     });
 }
 
 /**
+ * Bulk verify high confidence events
+ */
+export async function bulkVerifyEvents(threshold: number = 0.8): Promise<ApiResponse<{ message: string; updated_count: number }>> {
+    return authenticatedApiRequest<{ message: string; updated_count: number }>('/db/events/bulk-verify', {
+        method: 'POST',
+        body: JSON.stringify({ confidence_threshold: threshold }),
+    });
+}
+
+/**
+ * Export verified events as CSV
+ */
+export async function exportEvents(): Promise<void> {
+    const authHeader = useAuthStore.getState().getAuthHeader();
+    const response = await fetch(`${API_BASE}/db/events/export`, {
+        headers: {
+            ...authHeader
+        }
+    });
+
+    if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `sca_audit_export_${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+    } else {
+        throw new Error('Failed to export events');
+    }
+}
+
+/**
  * Get all tracked persons
  */
 export async function getPersons(): Promise<ApiResponse<{ persons: Person[] }>> {
-    return apiRequest<{ persons: Person[] }>('/db/persons');
+    return authenticatedApiRequest<{ persons: Person[] }>('/db/persons');
 }
 
 /**
  * Get a specific person by ID
  */
 export async function getPerson(personId: string): Promise<ApiResponse<Person>> {
-    return apiRequest<Person>(`/db/persons/${personId}`);
+    return authenticatedApiRequest<Person>(`/db/persons/${personId}`);
 }
 
 /**
  * Get the sustainability leaderboard
  */
 export async function getLeaderboard(): Promise<ApiResponse<{ leaderboard: LeaderboardEntry[] }>> {
-    return apiRequest<{ leaderboard: LeaderboardEntry[] }>('/db/leaderboard');
+    return authenticatedApiRequest<{ leaderboard: LeaderboardEntry[] }>('/db/leaderboard');
 }
 
 /**
  * Get database statistics
  */
 export async function getStats(): Promise<ApiResponse<DatabaseStats>> {
-    return apiRequest<DatabaseStats>('/db/stats');
+    return authenticatedApiRequest<DatabaseStats>('/db/stats');
 }
 
 /**
@@ -305,12 +413,14 @@ export async function getAdminStats(): Promise<ApiResponse<{
     hc_count: number;
     avg_accuracy: number;
     total_verified: number;
+    db_size_kb: number;
 }>> {
-    return apiRequest<{
+    return authenticatedApiRequest<{
         pending_count: number;
         hc_count: number;
         avg_accuracy: number;
         total_verified: number;
+        db_size_kb: number;
     }>('/db/admin-stats');
 }
 
@@ -332,7 +442,7 @@ export async function getEnergyReport(params?: {
     if (params?.department) searchParams.set('department', params.department);
 
     const query = searchParams.toString();
-    return apiRequest<EnergyReport>(`/energy/report${query ? `?${query}` : ''}`);
+    return authenticatedApiRequest<EnergyReport>(`/energy/report${query ? `?${query}` : ''}`);
 }
 
 /**
@@ -347,7 +457,7 @@ export async function getBlockchainCredits(params?: {
     if (params?.hours) searchParams.set('hours', String(params.hours));
 
     const query = searchParams.toString();
-    return apiRequest<BlockchainCredits>(`/energy/blockchain-credits${query ? `?${query}` : ''}`);
+    return authenticatedApiRequest<BlockchainCredits>(`/energy/blockchain-credits${query ? `?${query}` : ''}`);
 }
 
 /**
@@ -362,7 +472,7 @@ export async function getSustainableActions(params?: {
     if (params?.limit) searchParams.set('limit', String(params.limit));
 
     const query = searchParams.toString();
-    return apiRequest<{ actions: DetectionEvent[] }>(
+    return authenticatedApiRequest<{ actions: DetectionEvent[] }>(
         `/energy/sustainable-actions${query ? `?${query}` : ''}`
     );
 }
@@ -371,7 +481,7 @@ export async function getSustainableActions(params?: {
  * Get real-time live metrics
  */
 export async function getLiveMetrics(): Promise<ApiResponse<LiveMetrics>> {
-    return apiRequest<LiveMetrics>('/energy/live-metrics');
+    return authenticatedApiRequest<LiveMetrics>('/energy/live-metrics');
 }
 
 // ============================================================
@@ -405,14 +515,14 @@ export async function getApiInfo(): Promise<ApiResponse<{
  * List all uploaded videos
  */
 export async function listUploads(): Promise<ApiResponse<{ files: string[] }>> {
-    return apiRequest<{ files: string[] }>('/list/uploads');
+    return authenticatedApiRequest<{ files: string[] }>('/list/uploads');
 }
 
 /**
  * List all result files
  */
 export async function listResults(): Promise<ApiResponse<{ files: string[] }>> {
-    return apiRequest<{ files: string[] }>('/list/results');
+    return authenticatedApiRequest<{ files: string[] }>('/list/results');
 }
 
 /**
@@ -425,13 +535,104 @@ export async function submitContact(data: { name: string; email: string; message
     });
 }
 
+// ============================================================
+// AUTHENTICATION API (JWT)
+// ============================================================
+
+export interface AuthTokenResponse {
+    success: boolean;
+    message: string;
+    access_token: string;
+    refresh_token: string;
+    token_type: string;
+    expires_in: number;
+    user: {
+        user_id: number;
+        email: string;
+        role: 'student' | 'faculty' | 'admin';
+        name: string;
+        department: string;
+        node_id?: string;
+        last_login?: string;
+    };
+    environment?: string;
+}
+
 /**
- * Perform identity authentication (actual end-to-end)
+ * Authenticate user and get JWT tokens
  */
-export async function authLogin(credentials: any): Promise<ApiResponse<{ success: boolean; user: any; environment: string }>> {
-    return apiRequest<{ success: boolean; user: any; environment: string }>('/auth/login', {
+export async function authLogin(credentials: {
+    email: string;
+    password: string;
+    use_mock?: boolean;
+}): Promise<ApiResponse<AuthTokenResponse>> {
+    return apiRequest<AuthTokenResponse>('/auth/login', {
         method: 'POST',
         body: JSON.stringify(credentials),
+    });
+}
+
+/**
+ * Register a new user and get JWT tokens
+ */
+export async function authRegister(data: {
+    email: string;
+    password: string;
+    name?: string;
+    role: 'student' | 'faculty';
+    department?: string;
+}): Promise<ApiResponse<AuthTokenResponse>> {
+    return apiRequest<AuthTokenResponse>('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify(data),
+    });
+}
+
+/**
+ * Refresh access token using refresh token
+ */
+export async function authRefreshToken(refreshToken: string): Promise<ApiResponse<{
+    success: boolean;
+    access_token: string;
+    token_type: string;
+    expires_in: number;
+}>> {
+    return apiRequest<{ success: boolean; access_token: string; token_type: string; expires_in: number }>('/auth/refresh', {
+        method: 'POST',
+        body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+}
+
+/**
+ * Get current authenticated user info
+ */
+export async function getCurrentUser(): Promise<ApiResponse<{
+    success: boolean;
+    user: {
+        user_id: number;
+        email: string;
+        role: string;
+        name: string;
+        department: string;
+    };
+}>> {
+    return authenticatedApiRequest<{ success: boolean; user: any }>('/auth/me');
+}
+
+/**
+ * Get list of users (admin only - requires JWT)
+ */
+export async function getUsers(): Promise<ApiResponse<{ users: any[]; total: number }>> {
+    return authenticatedApiRequest<{ users: any[]; total: number }>('/auth/users');
+}
+
+/**
+ * Update user role or status (admin only)
+ */
+export async function updateUser(userId: number, data: { role?: string; is_active?: boolean }): Promise<ApiResponse<{ message: string; user: any }>> {
+    return authenticatedApiRequest<{ message: string; user: any }>(`/auth/users/${userId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
     });
 }
 
@@ -444,33 +645,10 @@ export async function transferCredits(senderId: string, recipientId: string, amo
     amount: number;
     message: string;
 }>> {
-    return apiRequest<{ success: boolean; transaction_hash: string; amount: number; message: string }>('/db/transfer', {
+    return authenticatedApiRequest<{ success: boolean; transaction_hash: string; amount: number; message: string }>('/energy/transfer', {
         method: 'POST',
         body: JSON.stringify({ sender_id: senderId, recipient_id: recipientId, amount }),
     });
-}
-
-/**
- * Register a new user (student or faculty only)
- */
-export async function authRegister(data: {
-    email: string;
-    password: string;
-    name?: string;
-    role: 'student' | 'faculty';
-    department?: string;
-}): Promise<ApiResponse<{ success: boolean; user: any; message: string }>> {
-    return apiRequest<{ success: boolean; user: any; message: string }>('/auth/register', {
-        method: 'POST',
-        body: JSON.stringify(data),
-    });
-}
-
-/**
- * Get list of users (admin only)
- */
-export async function getUsers(): Promise<ApiResponse<{ users: any[]; total: number }>> {
-    return apiRequest<{ users: any[]; total: number }>('/auth/users');
 }
 
 // Export the API base URL for debugging

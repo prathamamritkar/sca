@@ -65,14 +65,12 @@ const Wallet = () => {
   const [dailyGain, setDailyGain] = useState(0);
   const [totalActions, setTotalActions] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [displayCount, setDisplayCount] = useState(10);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [transferAmount, setTransferAmount] = useState("");
   const [transferRecipient, setTransferRecipient] = useState("");
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
-  const { useMockData } = useAuthStore();
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -82,32 +80,56 @@ const Wallet = () => {
       const userEmail = useAuthStore.getState().user?.email || "anonymous";
 
       const credits = await cvApi.getBlockchainCredits({ person_id: userEmail });
-      if (credits.success) setTotalPoints(Math.round(credits.data.total_blockchain_credits));
+      if (credits.success && credits.data) {
+        setTotalPoints(Math.round(credits.data.total_blockchain_credits || 0));
 
-      const events = await cvApi.getEvents({ limit: 100 });
-      if (events.success && events.data) {
-        const txs = events.data.events.filter(e => (e.blockchain_credits || 0) !== 0).map((e, i) => ({
-          id: `tx_${e.event_id || i}`,
-          action: (e.action_detected || 'Behavioral_Correction').toUpperCase(),
-          points: e.blockchain_credits || 0,
-          timestamp: e.timestamp,
-          hash: `0x${(e.event_id || i).toString(16).padStart(40, '0')}`, // Deterministic pseudo-hash for UI
-          location: e.room_id || 'Unknown'
-        }));
-        setTransactions(txs);
-        setTotalActions(txs.length);
+        const historyData: Transaction[] = [];
 
-        // Calculate weekly gain from last 7 days
+        // 1. Earned through behavior (Events)
+        const eventsResult = await cvApi.getEvents({ limit: 50 });
+        if (eventsResult.success && eventsResult.data) {
+          eventsResult.data.events.filter(e => e.person_id === userEmail && (e.blockchain_credits || 0) !== 0).forEach(e => {
+            historyData.push({
+              id: `evt_${e.event_id}`,
+              action: (e.action_detected || 'Behavioral_Correction').toUpperCase(),
+              points: e.blockchain_credits || 0,
+              timestamp: e.timestamp,
+              hash: `0x${(e.event_id).toString(16).padStart(40, '0')}`,
+              location: e.room_id || 'Unknown'
+            });
+          });
+        }
+
+        // 2. Transfers and other activities
+        if (credits.data.recent_history) {
+          credits.data.recent_history.forEach((a: any) => {
+            if (a.activity_type === 'disbursement' || a.activity_type === 'transfer_receipt') {
+              historyData.push({
+                id: `act_${a.activity_id}`,
+                action: (a.activity_type === 'disbursement' ? 'ASSET_DISPATCH' : 'ASSET_RECEIPT').toUpperCase(),
+                points: a.incentive_points,
+                timestamp: a.timestamp,
+                hash: `0x${(a.activity_id + 5000).toString(16).padStart(40, 'b000')}`,
+                location: a.details?.recipient || a.details?.sender || 'Network'
+              });
+            }
+          });
+        }
+
+        // Sort by timestamp descending
+        const sortedHistory = historyData.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        setTransactions(sortedHistory);
+        setTotalActions(sortedHistory.length);
+
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        const weekly = txs.filter(tx => new Date(tx.timestamp) >= sevenDaysAgo && tx.points > 0)
+        const weekly = sortedHistory.filter(tx => new Date(tx.timestamp) >= sevenDaysAgo && tx.points > 0)
           .reduce((sum, tx) => sum + tx.points, 0);
         setWeeklyGain(weekly);
 
-        // Calculate daily gain from last 24 hours
         const twentyFourHoursAgo = new Date();
         twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
-        const daily = txs.filter(tx => new Date(tx.timestamp) >= twentyFourHoursAgo && tx.points > 0)
+        const daily = sortedHistory.filter(tx => new Date(tx.timestamp) >= twentyFourHoursAgo && tx.points > 0)
           .reduce((sum, tx) => sum + tx.points, 0);
         setDailyGain(daily);
       }
@@ -194,6 +216,9 @@ const Wallet = () => {
           </div>
 
           <div className="flex items-center gap-3">
+            <Button onClick={loadWalletData} disabled={isLoading} variant="outline" className="h-10 px-5 rounded-xl border-slate-200 font-bold text-[10px] uppercase tracking-widest bg-white shadow-sm hover:bg-slate-50">
+              <RefreshCw className={cn("w-3.5 h-3.5 mr-2", isLoading && "animate-spin")} /> Refresh
+            </Button>
             <Button aria-label="Open transfer assets modal" onClick={() => setIsTransferModalOpen(true)} className="h-10 px-8 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest shadow-2xl shadow-slate-200 group">
               <Send className="w-3.5 h-3.5 mr-2 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform" /> Dispatch Assets
             </Button>
@@ -281,7 +306,7 @@ const Wallet = () => {
                   id="lookup-hash"
                   placeholder="Lookup Hash ID..."
                   value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-11 w-64 rounded-2xl bg-slate-50 border-none font-bold text-xs pl-10"
+                  className="h-11 w-full md:w-64 rounded-2xl bg-slate-50 border-none font-bold text-xs pl-10"
                 />
               </div>
               <Select value={filterType} onValueChange={setFilterType}>

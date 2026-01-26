@@ -70,6 +70,41 @@ class EnergyAnalyzer:
         else:  # balanced
             self.buffer_size = 3  # Balanced
             self.action_confidence_threshold = 0.70
+            
+    def reset_state(self):
+        """Reset temporal buffers for a new session"""
+        self.device_state_buffer = {}
+        self.occupancy_buffer = []
+        self.previous_state = {}
+        print(f"↺ EnergyAnalyzer state synchronized for {self.room_id}")
+
+    def log_action(self, action_result):
+        """Log an action result for performance metric calculation"""
+        # In a real system, ground truth would come from manual labels
+        # Here we use high confidence (>= 0.85) as 'True' for metric simulation
+        record = {
+            'timestamp': datetime.now().isoformat(),
+            'action_type': action_result['action_type'],
+            'confidence': action_result['confidence']
+        }
+        
+        # Simulate confusion matrix values for metric calculation
+        conf = action_result['confidence']
+        if action_result['action_type'] != 'neutral':
+            if conf >= 0.85:
+                record['true_positive'] = 1
+            elif conf < 0.60:
+                record['false_positive'] = 1
+        else:
+            if conf >= 0.85:
+                record['true_negative'] = 1
+            else:
+                record['false_negative'] = 1
+                
+        self.action_history.append(record)
+        # Keep history manageable
+        if len(self.action_history) > 1000:
+            self.action_history = self.action_history[-1000:]
         
     def detect_device_state(self, frame, device_bbox, device_type, device_id=None):
         """
@@ -93,13 +128,15 @@ class EnergyAnalyzer:
         if device_roi.size == 0:
             return {'state': 'UNKNOWN', 'confidence': 0.0, 'brightness': 0}
         
-        # Vectorized brightness calculation (faster than grayscale conversion)
-        # Use mean across color channels directly
+        # Vectorized brightness calculation
         avg_brightness = device_roi.mean()
         max_brightness = device_roi.max()
         
         # Detect screen-like devices (laptop, monitor, tv, projector)
         if device_type in ['laptop', 'monitor', 'tv', 'desktop', 'projector']:
+            # Convert to grayscale for thresholding
+            gray = cv2.cvtColor(device_roi, cv2.COLOR_BGR2GRAY)
+            
             # Check for bright regions (screen on)
             bright_pixels = np.sum(gray > self.SCREEN_ON_THRESHOLD)
             total_pixels = gray.size
@@ -267,6 +304,7 @@ class EnergyAnalyzer:
                     'ac_on': has_ac
                 }
                 action['description'] = f'{devices_left_on} device(s) left ON in empty classroom (Priority: {"HIGH" if multiplier > 2 else "MEDIUM"})'
+                self.log_action(action)
                 return action
         
         # Scenario 2: Devices turned OFF when leaving (SUSTAINABLE - Campus Bonus)
@@ -291,6 +329,7 @@ class EnergyAnalyzer:
             action['confidence'] = round(action_confidence, 2)
             action['blockchain_credits'] = self._calculate_credits(energy_saved, duration_hours=self.LAB_SESSION_HOURS, multiplier=multiplier)
             action['description'] = f'{devices_turned_off} device(s) turned OFF on exit (Campus bonus: {multiplier}x)'
+            self.log_action(action)
             return action
         
         # Scenario 3: Devices turned ON unnecessarily (UNSUSTAINABLE)
@@ -301,6 +340,7 @@ class EnergyAnalyzer:
             action['energy_impact'] = -self._calculate_power_difference(current_devices, previous_devices)
             action['confidence'] = round(action_confidence, 2)
             action['description'] = 'Devices turned ON in empty room'
+            self.log_action(action)
             return action
         
         # Scenario 4: Efficient device usage during class (SUSTAINABLE)
@@ -313,8 +353,10 @@ class EnergyAnalyzer:
             action['confidence'] = round(action_confidence, 2)
             action['blockchain_credits'] = self._calculate_credits(energy_saved, duration_hours=self.LAB_SESSION_HOURS)
             action['description'] = 'Device(s) turned OFF during class (efficient usage)'
+            self.log_action(action)
             return action
         
+        self.log_action(action)
         return action
     
     def _count_devices_on(self, devices):

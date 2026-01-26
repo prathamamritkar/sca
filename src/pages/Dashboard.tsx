@@ -108,12 +108,12 @@ const Dashboard = () => {
 
     try {
       const upload = await cvApi.uploadVideo(videoFile);
-      if (!upload.success) throw new Error(upload.error);
+      if (!upload.success || !upload.data) throw new Error(upload.error || 'Upload failed');
 
-      const process = await cvApi.processVideo(upload.data!.filename, 0.5);
-      if (!process.success) throw new Error(process.error);
+      const process = await cvApi.processVideo(upload.data.filename, 0.5);
+      if (!process.success || !process.data) throw new Error(process.error || 'Processing failed');
 
-      const converted = (process.data!.events || []).map((e, i) => ({
+      const converted = (process.data.events || []).map((e, i) => ({
         id: e.event_id || Date.now() + i,
         timestamp: e.timestamp,
         action: e.action_detected || 'unknown',
@@ -138,33 +138,33 @@ const Dashboard = () => {
       <div className="space-y-12">
         {/* Futuristic Workspace Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8 pb-6 border-b border-slate-100">
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center border border-primary/20">
                 <Terminal className="w-5 h-5 text-primary" />
               </div>
-              <h1 className="text-4xl font-black tracking-tighter text-slate-900">Dashboard</h1>
+              <h1 className="text-4xl font-black tracking-tighter text-slate-900 uppercase">Dashboard</h1>
             </div>
             <p className="text-slate-500 font-medium max-w-xl text-sm leading-relaxed">
-              Real-time monitoring of campus energy conservation. Verified detections are recorded on the secure ledger.
+              Monitor your campus energy savings in real-time. Every action is verified and rewarded.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-3 px-5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200/60">
-              {isCheckingApi ? <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" /> : apiConnected ? <Wifi className="w-3.5 h-3.5 text-success" /> : <WifiOff className="w-3.5 h-3.5 text-slate-300" />}
+              {isCheckingApi ? <Loader2 className="w-4 h-4 animate-spin text-slate-400" /> : apiConnected ? <Wifi className="w-4 h-4 text-success" /> : <WifiOff className="w-4 h-4 text-slate-300" />}
               <div className="flex flex-col leading-none">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-900">Link Status</span>
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
-                  {isCheckingApi ? "Syncing..." : apiConnected ? "Verified Node" : "Local Restricted"}
+                <span className="text-xs font-semibold text-slate-900">Connection</span>
+                <span className="text-[10px] text-slate-500">
+                  {isCheckingApi ? "Checking..." : apiConnected ? "Live Data" : "Demo Mode"}
                 </span>
               </div>
             </div>
-            <Button variant="ghost" size="sm" onClick={fetchLatestEvents} className="h-10 px-4 rounded-xl text-primary hover:bg-primary/5 font-black text-[10px] uppercase tracking-widest transition-all">
-              <RefreshCw className="w-3.5 h-3.5 mr-2" /> Synchronise Hub
+            <Button variant="ghost" size="sm" onClick={fetchLatestEvents} className="h-10 px-4 rounded-xl text-primary hover:bg-primary/5 font-medium text-sm transition-all">
+              <RefreshCw className="w-4 h-4 mr-2" /> Refresh
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setDetectionResults([])} className="h-10 px-4 rounded-xl text-destructive hover:bg-destructive/5 font-black text-[10px] uppercase tracking-widest transition-all">
-              <Trash2 className="w-3.5 h-3.5 mr-2" /> Clear View
+            <Button variant="ghost" size="sm" onClick={() => setDetectionResults([])} className="h-10 px-4 rounded-xl text-destructive hover:bg-destructive/5 font-medium text-sm transition-all">
+              <Trash2 className="w-4 h-4 mr-2" /> Clear
             </Button>
           </div>
         </div>
@@ -172,10 +172,10 @@ const Dashboard = () => {
         {/* Distributed Metrics Table */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
           {[
-            { label: "Detected Nodes", value: sessionStats.totalActions, icon: <Activity className="w-4 h-4" />, color: "text-slate-900" },
-            { label: "Accrued Credits", value: `+${sessionStats.totalCredits} XP`, icon: <Zap className="w-4 h-4" />, color: "text-primary" },
-            { label: "Inference Prec.", value: `${sessionStats.averageConfidence}%`, icon: <Cpu className="w-4 h-4" />, color: "text-slate-900" },
-            { label: "Audit Zones", value: sessionStats.uniqueLocations, icon: <Database className="w-4 h-4" />, color: "text-slate-900" }
+            { label: "Actions Detected", value: sessionStats.totalActions, icon: <Activity className="w-4 h-4" />, color: "text-slate-900" },
+            { label: "Credits Earned", value: `+${sessionStats.totalCredits}`, icon: <Zap className="w-4 h-4" />, color: "text-primary" },
+            { label: "Accuracy", value: `${sessionStats.averageConfidence}%`, icon: <Cpu className="w-4 h-4" />, color: "text-slate-900" },
+            { label: "Locations", value: sessionStats.uniqueLocations, icon: <Database className="w-4 h-4" />, color: "text-slate-900" }
           ].map((stat, i) => (
             <Card key={i} className="p-6 bg-slate-50/50 border-slate-200/50 rounded-[32px] hover:border-primary/20 transition-all group cursor-default">
               <div className="flex items-center justify-between mb-4">

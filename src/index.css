@@ -1,187 +1,303 @@
 @import url('https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,400..900&display=swap');
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind CSS v4 - CSS-first configuration */
+@import "tailwindcss";
+
+/* Custom theme configuration for Tailwind v4 */
+@theme {
+  /* Font family */
+  --font-sans: "Google Sans Flex", "Inter", system-ui, sans-serif;
+
+  /* Border radius */
+  --radius-lg: 0.75rem;
+  --radius-md: calc(0.75rem - 2px);
+  --radius-sm: calc(0.75rem - 4px);
+
+  /* Custom colors - defined with CSS variables */
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  --color-sidebar: hsl(var(--sidebar-background));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+
+  /* Keyframes */
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+
+    to {
+      height: 0;
+    }
+  }
+}
+
+/* Source detection for scanning files */
+@source "../pages/**/*.{ts,tsx}";
+@source "../components/**/*.{ts,tsx}";
+@source "../app/**/*.{ts,tsx}";
+@source "./**/*.{ts,tsx}";
 
 /* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
 All colors MUST be HSL.
 */
 
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 160 10% 15%;
+:root {
+  --background: 0 0% 100%;
+  --foreground: 160 10% 15%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 160 10% 15%;
+  --card: 0 0% 100%;
+  --card-foreground: 160 10% 15%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 160 10% 15%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 160 10% 15%;
 
-    --primary: 160 84% 39%;
-    --primary-foreground: 0 0% 100%;
+  --primary: 160 84% 39%;
+  --primary-foreground: 0 0% 100%;
 
-    --secondary: 142 76% 96%;
-    --secondary-foreground: 160 84% 25%;
+  --secondary: 142 76% 96%;
+  --secondary-foreground: 160 84% 25%;
 
-    --muted: 142 30% 96%;
-    --muted-foreground: 160 10% 45%;
+  --muted: 142 30% 96%;
+  --muted-foreground: 160 10% 45%;
 
-    --accent: 160 84% 45%;
-    --accent-foreground: 0 0% 100%;
+  --accent: 160 84% 45%;
+  --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 100%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 100%;
 
-    --success: 160 84% 39%;
-    --success-foreground: 0 0% 100%;
+  --success: 160 84% 39%;
+  --success-foreground: 0 0% 100%;
 
-    --border: 142 30% 88%;
-    --input: 142 30% 88%;
-    --ring: 160 84% 39%;
+  --border: 142 30% 88%;
+  --input: 142 30% 88%;
+  --ring: 160 84% 39%;
 
-    --radius: 0.75rem;
+  --radius: 0.75rem;
 
-    --gradient-eco: linear-gradient(135deg, hsl(160 84% 39%) 0%, hsl(160 84% 50%) 100%);
-    --gradient-subtle: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(142 76% 98%) 100%);
+  --gradient-eco: linear-gradient(135deg, hsl(160 84% 39%) 0%, hsl(160 84% 50%) 100%);
+  --gradient-subtle: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(142 76% 98%) 100%);
 
-    --shadow-sm: 0 1px 2px 0 hsl(160 20% 30% / 0.05);
-    --shadow-md: 0 4px 6px -1px hsl(160 20% 30% / 0.08);
-    --shadow-lg: 0 10px 15px -3px hsl(160 20% 30% / 0.1);
+  --shadow-sm: 0 1px 2px 0 hsl(160 20% 30% / 0.05);
+  --shadow-md: 0 4px 6px -1px hsl(160 20% 30% / 0.08);
+  --shadow-lg: 0 10px 15px -3px hsl(160 20% 30% / 0.1);
 
-    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 160 10% 15%;
-    --sidebar-primary: 160 84% 39%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 142 76% 96%;
-    --sidebar-accent-foreground: 160 84% 25%;
-    --sidebar-border: 142 30% 88%;
-    --sidebar-ring: 160 84% 39%;
-  }
-
-  .dark {
-    --background: 160 15% 8%;
-    --foreground: 0 0% 95%;
-
-    --card: 160 15% 10%;
-    --card-foreground: 0 0% 95%;
-
-    --popover: 160 15% 10%;
-    --popover-foreground: 0 0% 95%;
-
-    --primary: 160 84% 45%;
-    --primary-foreground: 160 15% 8%;
-
-    --secondary: 160 20% 15%;
-    --secondary-foreground: 0 0% 95%;
-
-    --muted: 160 20% 15%;
-    --muted-foreground: 160 10% 65%;
-
-    --accent: 160 84% 40%;
-    --accent-foreground: 0 0% 100%;
-
-    --destructive: 0 62.8% 50%;
-    --destructive-foreground: 0 0% 100%;
-
-    --success: 160 84% 45%;
-    --success-foreground: 160 15% 8%;
-
-    --border: 160 20% 20%;
-    --input: 160 20% 20%;
-    --ring: 160 84% 45%;
-
-    --gradient-eco: linear-gradient(135deg, hsl(160 84% 35%) 0%, hsl(160 84% 45%) 100%);
-    --gradient-subtle: linear-gradient(180deg, hsl(160 15% 8%) 0%, hsl(160 15% 12%) 100%);
-
-    --sidebar-background: 160 15% 10%;
-    --sidebar-foreground: 0 0% 95%;
-    --sidebar-primary: 160 84% 45%;
-    --sidebar-primary-foreground: 160 15% 8%;
-    --sidebar-accent: 160 20% 15%;
-    --sidebar-accent-foreground: 0 0% 95%;
-    --sidebar-border: 160 20% 20%;
-    --sidebar-ring: 160 84% 45%;
-  }
+  --sidebar-background: 0 0% 98%;
+  --sidebar-foreground: 160 10% 15%;
+  --sidebar-primary: 160 84% 39%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 142 76% 96%;
+  --sidebar-accent-foreground: 160 84% 25%;
+  --sidebar-border: 142 30% 88%;
+  --sidebar-ring: 160 84% 39%;
 }
 
-@layer base {
-  * {
-    @apply border-border;
-  }
+.dark {
+  --background: 160 15% 8%;
+  --foreground: 0 0% 95%;
 
-  html {
-    scroll-behavior: smooth;
-  }
+  --card: 160 15% 10%;
+  --card-foreground: 0 0% 95%;
 
-  body {
-    @apply bg-background text-foreground antialiased;
-    font-family: 'Google Sans Flex', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    font-variation-settings: 'wght' 400, 'opsz' 14;
-    line-height: 1.6;
-    letter-spacing: -0.01em;
-  }
+  --popover: 160 15% 10%;
+  --popover-foreground: 0 0% 95%;
 
-  /* Accessibility: Visible Focus Rings */
-  :focus-visible {
-    @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background;
-  }
+  --primary: 160 84% 45%;
+  --primary-foreground: 160 15% 8%;
 
-  /* Consistent Section Selection */
-  ::selection {
-    @apply bg-primary/20 text-slate-900;
-  }
+  --secondary: 160 20% 15%;
+  --secondary-foreground: 0 0% 95%;
 
-  h1, h2, h3 {
-    @apply font-black uppercase;
-    line-height: 1.1;
-    letter-spacing: -0.04em;
-    font-variation-settings: 'wght' 900, 'opsz' 48;
-  }
+  --muted: 160 20% 15%;
+  --muted-foreground: 160 10% 65%;
 
-  h4,
-  h5,
-  h6 {
-    @apply font-bold tracking-tight;
-    line-height: 1.25;
-    letter-spacing: -0.02em;
-    font-variation-settings: 'wght' 700, 'opsz' 24;
-  }
+  --accent: 160 84% 40%;
+  --accent-foreground: 0 0% 100%;
 
-  .font-thin {
-    font-variation-settings: 'wght' 100, 'opsz' 10;
-    letter-spacing: 0.02em;
-  }
+  --destructive: 0 62.8% 50%;
+  --destructive-foreground: 0 0% 100%;
 
-  .font-medium {
-    font-variation-settings: 'wght' 500, 'opsz' 14;
-    letter-spacing: -0.01em;
-  }
+  --success: 160 84% 45%;
+  --success-foreground: 160 15% 8%;
 
-  .font-semibold {
-    font-variation-settings: 'wght' 600, 'opsz' 18;
-    letter-spacing: -0.015em;
-  }
+  --border: 160 20% 20%;
+  --input: 160 20% 20%;
+  --ring: 160 84% 45%;
 
-  .font-bold {
-    font-variation-settings: 'wght' 700, 'opsz' 24;
-    letter-spacing: -0.02em;
-  }
+  --gradient-eco: linear-gradient(135deg, hsl(160 84% 35%) 0%, hsl(160 84% 45%) 100%);
+  --gradient-subtle: linear-gradient(180deg, hsl(160 15% 8%) 0%, hsl(160 15% 12%) 100%);
 
-  .font-black {
-    font-variation-settings: 'wght' 900, 'opsz' 32;
-    letter-spacing: -0.05em;
-  }
-
-  /* Wide tracked labels for technical context */
-  .tracking-widest {
-    letter-spacing: 0.3em !important;
-  }
+  --sidebar-background: 160 15% 10%;
+  --sidebar-foreground: 0 0% 95%;
+  --sidebar-primary: 160 84% 45%;
+  --sidebar-primary-foreground: 160 15% 8%;
+  --sidebar-accent: 160 20% 15%;
+  --sidebar-accent-foreground: 0 0% 95%;
+  --sidebar-border: 160 20% 20%;
+  --sidebar-ring: 160 84% 45%;
 }
 
+/* Base styles */
+* {
+  border-color: hsl(var(--border));
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: 'Google Sans Flex', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-variation-settings: 'wght' 400, 'opsz' 14;
+  line-height: 1.6;
+  letter-spacing: -0.01em;
+}
+
+/* Accessibility: Visible Focus Rings */
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--primary));
+}
+
+/* Consistent Section Selection */
+::selection {
+  background-color: hsl(var(--primary) / 0.2);
+  color: hsl(215 25% 15%);
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 900;
+  text-transform: uppercase;
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+  font-variation-settings: 'wght' 900, 'opsz' 48;
+}
+
+h4,
+h5,
+h6 {
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  font-variation-settings: 'wght' 700, 'opsz' 24;
+}
+
+.font-thin {
+  font-variation-settings: 'wght' 100, 'opsz' 10;
+  letter-spacing: 0.02em;
+}
+
+.font-medium {
+  font-variation-settings: 'wght' 500, 'opsz' 14;
+  letter-spacing: -0.01em;
+}
+
+.font-semibold {
+  font-variation-settings: 'wght' 600, 'opsz' 18;
+  letter-spacing: -0.015em;
+}
+
+.font-bold {
+  font-variation-settings: 'wght' 700, 'opsz' 24;
+  letter-spacing: -0.02em;
+}
+
+.font-black {
+  font-variation-settings: 'wght' 900, 'opsz' 32;
+  letter-spacing: -0.05em;
+}
+
+/* ==========================================================================
+   TYPOGRAPHY SYSTEM - Consistency Guide
+   ==========================================================================
+   
+   PAGE TITLES (H1):
+   - Class: text-4xl font-black tracking-tighter text-slate-900 uppercase
+   - Used in: Dashboard, Events, Leaderboard, Wallet, Admin, NotFound
+   
+   SECTION HEADERS (H2):
+   - Class: text-xl font-black tracking-tighter text-slate-900 uppercase
+   - Used for: Secondary headings within pages
+   
+   SECTION LABELS:
+   - Class: text-xs font-bold uppercase tracking-[0.3em] text-primary
+   - Used for: Category labels above sections
+   
+   STAT LABELS:
+   - Class: text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400
+   - Used for: Labels under stat values
+   
+   BUTTON TEXT:
+   - Class: font-black text-[10px] uppercase tracking-widest
+   - Used for: Primary action buttons
+   
+   BODY DESCRIPTIONS:
+   - Class: text-slate-500 font-medium text-sm leading-relaxed
+   - Used for: Page subtitle descriptions
+   
+   ========================================================================== */
+
+/* Wide tracked labels for technical context */
+.tracking-widest {
+  letter-spacing: 0.3em !important;
+}
+
+/* Custom animations */
 @keyframes spin-slow {
   from {
     transform: rotate(0deg);

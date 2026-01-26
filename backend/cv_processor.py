@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from database import Database
 from energy_analyzer import EnergyAnalyzer
+from blockchain import BlockchainManager
 
 class CVProcessor:
     # Class-level cache for face cascades (shared across instances)
@@ -88,11 +89,67 @@ class CVProcessor:
         else:
             self.db = Database() if use_database else None
         
+        # Load existing persons from database to maintain identity
+        if self.use_database and self.db:
+            self._load_known_faces()
+            
         # Energy analyzer for campus sustainability tracking (pass optimization mode)
         self.energy_analyzer = EnergyAnalyzer(self.room_id, optimization_mode=optimization_mode)
         self.previous_devices_state = []  # Track previous device states
         self.previous_occupancy = False
         self.previous_lights_on = False
+        
+        # Initialize blockchain manager
+        self.blockchain = BlockchainManager()
+    
+    def _load_known_faces(self):
+        """Load known persons from database to maintain cross-session identity"""
+        try:
+            persons = self.db.get_all_persons()
+            for person in persons:
+                person_id = person.person_id
+                
+                # Initialize known faces entry
+                self.known_faces[person_id] = {
+                    'histograms': [],
+                    'last_bbox': None,
+                    'frame_last_seen': 0,
+                    'detection_count': person.total_detections,
+                    'confidence_history': [0.8], # Start with reasonable confidence
+                    'wallet_address': person.wallet_address
+                }
+                
+                # Extract counter from ID if it follows "person_XXX" format
+                if person_id.startswith('person_'):
+                    try:
+                        idx = int(person_id.split('_')[1])
+                        self.person_counter = max(self.person_counter, idx + 1)
+                    except (ValueError, IndexError):
+                        pass
+                
+                # Load appearance/face histogram if image exists
+                if person.face_image_path and Path(person.face_image_path).exists():
+                    img = cv2.imread(person.face_image_path)
+                    if img is not None:
+                        # Create histogram for better matching
+                        if person.detection_method == 'face':
+                            # Resize face for consistency
+                            face_resized = cv2.resize(img, (100, 100))
+                            if len(face_resized.shape) > 2:
+                                face_resized = cv2.cvtColor(face_resized, cv2.COLOR_BGR2GRAY)
+                            hist = cv2.calcHist([face_resized], [0], None, [256], [0, 256])
+                            hist = cv2.normalize(hist, hist).flatten()
+                        else:
+                            # Appearance histogram
+                            hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+                            hist = cv2.calcHist([hsv], [0, 1], None, [50, 60], [0, 180, 0, 256])
+                            hist = cv2.normalize(hist, hist).flatten()
+                        
+                        self.known_faces[person_id]['histograms'].append(hist)
+            
+            print(f"✓ Synchronized {len(self.known_faces)} identities from node ledger.")
+        except Exception as e:
+            print(f"⚠ Could not synchronize known persons: {e}")
     
     def _ensure_model_loaded(self):
         """Lazy load YOLO model on first use"""
@@ -125,6 +182,22 @@ class CVProcessor:
             self.action_confidence_min = 0.70  # Balanced action threshold
             self.min_detections_for_verification = 5  # Balanced verification
     
+    def reset_temporal_state(self):
+        """Reset all temporal buffers and tracking data for a new video stream"""
+        self.current_frame_number = 0
+        self.occupancy_buffer = []
+        self.previous_devices_state = []
+        self.previous_occupancy = False
+        self.previous_lights_on = False
+        self.person_temporal_buffer = {}
+        self.kalman_filters = {}
+        
+        # Reset energy analyzer temporal state
+        if hasattr(self, 'energy_analyzer'):
+            self.energy_analyzer.reset_state()
+            
+        print(f"↺ Temporal state reset for room node: {self.room_id}")
+
     def create_kalman_filter(self, initial_bbox):
         """
         Create Kalman filter for person tracking (reduces false negatives)
@@ -252,7 +325,8 @@ class CVProcessor:
                     'bbox': [x1, y1, x2, y2],
                     'face_bbox': None,
                     'confidence': 0.5,  # Lower confidence when face not detected
-                    'detection_method': 'appearance'
+                    'detection_method': 'appearance',
+                    'wallet_address': self.known_faces[person_id].get('wallet_address')
                 })
             else:
                 # Take the largest face
@@ -277,7 +351,8 @@ class CVProcessor:
                         'bbox': [x1, y1, x2, y2],
                         'face_bbox': [x1 + fx, y1 + fy, fx + fw, fy + fh],
                         'confidence': 0.9,
-                        'detection_method': 'face'
+                        'detection_method': 'face',
+                        'wallet_address': self.known_faces[person_id].get('wallet_address')
                     })
         
         return recognized_persons
@@ -517,10 +592,10 @@ class CVProcessor:
         """
         devices = []
         device_classes = {
-            62: 'laptop',
-            63: 'mouse',
-            67: 'cell phone',
-            72: 'tv'  # Can detect monitors as TVs
+            62: 'tv',
+            63: 'laptop',
+            64: 'mouse',
+            67: 'cell phone'
         }
         
         for idx, box in enumerate(results.boxes):
@@ -569,7 +644,7 @@ class CVProcessor:
         
         return devices
     
-    def log_person_activity(self, person_id, activity_type, details=None):
+    def log_person_activity(self, person_id, activity_type, details=None, incentive_points=None, incentive_reason=None):
         """
         Log activity for a specific person (for incentive tracking)
         activity_type: 'entry', 'exit', 'device_usage', 'violation', etc.
@@ -588,8 +663,12 @@ class CVProcessor:
         
         # Log to database with incentive points
         if self.db:
-            incentive_points = 1 if activity_type == 'presence' else 0
-            incentive_reason = 'room_presence' if activity_type == 'presence' else None
+            # Default points if not provided
+            if incentive_points is None:
+                incentive_points = 1 if activity_type == 'presence' else 0
+            
+            if incentive_reason is None:
+                incentive_reason = 'room_presence' if activity_type == 'presence' else activity_type
             
             self.db.add_activity(
                 person_id=person_id,
@@ -702,23 +781,56 @@ class CVProcessor:
         self.previous_occupancy = occupancy
         self.previous_lights_on = lights_on
         
-        # Log entry/presence for each recognized person
-        if recognized_persons:
-            for person in recognized_persons:
-                self.log_person_activity(
-                    person['person_id'],
-                    'presence',
-                    {'devices_nearby': len(devices), 'action': action_result['action_detected']}
-                )
+        # Log events to database
+        if self.db:
+            if recognized_persons:
+                # Aggregate credits for the event
+                action_type = action_result.get('action_type', 'neutral')
+                credits = action_result.get('blockchain_credits', 0.0)
+                action_desc = action_result.get('action_detected', 'unknown')
                 
-                # Log event to database
-                if self.db:
+                for person in recognized_persons:
+                    # 1. Log basic presence (small reward)
+                    self.log_person_activity(
+                        person['person_id'],
+                        'presence',
+                        {'devices_nearby': len(devices), 'action': action_desc},
+                        incentive_points=1,
+                        incentive_reason='room_presence'
+                    )
+                    
+                    # 2. Log specific sustainability action if detected
+                    if action_type in ['sustainable', 'unsustainable'] and credits != 0:
+                        self.log_person_activity(
+                            person['person_id'],
+                            action_type,
+                            {'action': action_desc, 'energy_impact': event['energy_saved_estimate']},
+                            incentive_points=int(credits),
+                            incentive_reason=f"Verified {action_type} action: {action_desc}"
+                        )
+                        
+                        # Actual Blockchain Transaction (Real Testnet Support)
+                        if action_type == 'sustainable':
+                            # Check for real wallet address in database, fallback to pseudo-wallet
+                            wallet = person.get('wallet_address')
+                            if not wallet:
+                                import hashlib
+                                wallet = f"0x{hashlib.sha256(person['person_id'].encode()).hexdigest()[:40]}"
+                                
+                            self.blockchain.mint_credits(
+                                target_address=wallet, 
+                                amount=int(credits),
+                                action_type=action_desc,
+                                room_id=self.room_id
+                            )
+                    
+                    # Log event entry linked to this person
                     event_data = {
                         'timestamp': event['timestamp'],
                         'room_id': self.room_id,
-                        'department': self.department,  # Campus department tracking
+                        'department': self.department,
                         'occupancy': occupancy,
-                        'person_count': 1,
+                        'person_count': person_count,
                         'person_id': person['person_id'],
                         'bbox': person.get('bbox'),
                         'face_bbox': person.get('face_bbox'),
@@ -736,6 +848,27 @@ class CVProcessor:
                         'blockchain_credits': event['blockchain_credits']
                     }
                     self.db.add_event(event_data)
+            else:
+                # Log event even if no specific person identified (e.g. system automatic OFF)
+                event_data = {
+                    'timestamp': event['timestamp'],
+                    'room_id': self.room_id,
+                    'department': self.department,
+                    'occupancy': occupancy,
+                    'person_count': person_count,
+                    'person_id': None,
+                    'devices_detected': devices,
+                    'devices_on': devices_on,
+                    'devices_off': devices_off,
+                    'lights_on': lights_on,
+                    'video_file': video_file,
+                    'frame_number': frame_number,
+                    'action_detected': action_result['action_detected'],
+                    'action_type': action_result['action_type'],
+                    'energy_saved_estimate': event['energy_saved_estimate'],
+                    'blockchain_credits': event['blockchain_credits']
+                }
+                self.db.add_event(event_data)
         
         return event
     
@@ -765,27 +898,47 @@ class CVProcessor:
         print(f"✓ Saved person logs to {output_path}")
         return logs_summary
     
-    def process_video(self, video_source, mode='realtime'):
+    def process_video(self, video_path=None, output_json_path=None, confidence_threshold=0.5, mode='uploaded', video_source=None, duration_seconds=None):
         """
-        Process video stream (realtime=0 for webcam, or file path)
-        mode: 'realtime' or 'uploaded'
+        Process video stream or file with AI detection
+        
+        Args:
+            video_path: Path to video file (if mode='uploaded')
+            output_json_path: Path to save result JSON
+            confidence_threshold: YOLO confidence threshold
+            mode: 'realtime' or 'uploaded'
+            video_source: Fallback for video_path
+            duration_seconds: Maximum duration to process (for realtime mode)
         """
-        # Get video filename
-        video_filename = Path(video_source).name if mode == 'uploaded' else 'webcam'
+        source = video_path or video_source
+        if mode == 'realtime' and source is None:
+            source = 0 # Default webcam
+            
+        # Get video filename for logging
+        video_filename = Path(str(source)).name if mode == 'uploaded' else 'webcam'
+        
+        # Reset temporal state for new session
+        self.reset_temporal_state()
+        
+        # update thresholds
+        self.yolo_conf_threshold = confidence_threshold
         
         # Open video source
         if mode == 'realtime':
-            cap = cv2.VideoCapture(0)  # Webcam
+            cap = cv2.VideoCapture(source if source is not None else 0)
         else:
-            cap = cv2.VideoCapture(video_source)  # Video file
+            cap = cv2.VideoCapture(str(source))
         
         if not cap.isOpened():
-            print("Error: Cannot open video source")
-            return
+            print(f"Error: Cannot open video source: {source}")
+            return {"error": "Failed to capture video source", "events": []}
         
         events = []
         frame_count = 0
         self.current_frame_number = 0  # Reset frame counter for tracking
+        
+        import time
+        start_time = time.time()
         
         print(f"Processing video ({mode})... Press 'q' to quit")
         
@@ -794,12 +947,18 @@ class CVProcessor:
             if not ret:
                 break
             
+            # Check duration limit for realtime mode
+            if duration_seconds and (time.time() - start_time) > duration_seconds:
+                print(f"⏱ Duration limit reached: {duration_seconds}s")
+                break
+                
             frame_count += 1
             self.current_frame_number = frame_count
             
-            # Process every 30th frame to save computation (5-second intervals at 30fps)
-            # For 5-second intervals: 30fps * 5s = 150 frames
-            processing_interval = 150  # Process every 5 seconds
+            # Process based on mode to balance accuracy and performance
+            # Realtime: Every 30 frames (approx 1s) to not miss quick movements
+            # Uploaded: Every 150 frames (approx 5s) for audit efficiency
+            processing_interval = 30 if mode == 'realtime' else 150
             
             if frame_count % processing_interval == 0:
                 # Enhance frame for low-light conditions
@@ -840,18 +999,27 @@ class CVProcessor:
         cv2.destroyAllWindows()
         
         # Save events to JSON
-        timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-        output_file = f"outputs/events_{timestamp_str}.json"
+        if output_json_path:
+            output_file = output_json_path
+        else:
+            timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+            output_file = f"outputs/events_{timestamp_str}.json"
+            
         with open(output_file, 'w') as f:
             json.dump(events, f, indent=2)
         
         # Save person logs
-        person_logs_file = f"outputs/person_logs_{timestamp_str}.json"
+        person_logs_file = f"outputs/person_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         self.save_person_logs(person_logs_file)
         
         print(f"✓ Saved {len(events)} events to {output_file}")
-        print(f"✓ Tracked {len(self.known_faces)} unique person(s)")
-        return events
+        
+        return {
+            "success": True,
+            "filename": video_filename,
+            "events_detected": len(events),
+            "events": events
+        }
 
 # Test the processor
 if __name__ == "__main__":
@@ -879,7 +1047,8 @@ if __name__ == "__main__":
             print(f"{'='*60}")
             
             try:
-                events = processor.process_video(str(video_path), mode='uploaded')
+                events_result = processor.process_video(video_path=str(video_path), mode='uploaded')
+                events = events_result.get('events', [])
                 print(f"✓ Successfully processed {video_path.name}")
                 print(f"  - Generated {len(events)} events")
             except Exception as e:

@@ -1,8 +1,23 @@
-opencv-python>=4.8.0
-opencv-contrib-python>=4.8.0
-numpy>=1.24.0
-flask>=2.3.0
-flask-cors>=4.0.0
-ultralytics>=8.0.0
-sqlalchemy>=2.0.0
-werkzeug>=2.3.0
+# SCA Backend Requirements
+# Updated to latest versions as of January 2026
+
+# Core CV/ML dependencies
+opencv-python>=4.10.0
+opencv-contrib-python>=4.10.0
+numpy>=2.0.0
+ultralytics>=8.3.0
+
+# Web framework
+flask>=3.1.0
+flask-cors>=5.0.0
+werkzeug>=3.1.0
+
+# Database
+sqlalchemy>=2.0.36
+
+# Authentication
+PyJWT>=2.8.0
+bcrypt>=4.1.0
+
+# Optional: Production server (uncomment for deployment)
+# gunicorn>=23.0.0

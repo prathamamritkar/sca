@@ -23,6 +23,7 @@ import { useAuthStore } from "@/store/authStore";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import Logo from "@/components/Logo";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -32,15 +33,27 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { user, userEmail, logout, useMockData } = useAuthStore();
+  const { user, userEmail, logout, useMockData, isAuthenticated } = useAuthStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  // Secondary auth guard - redirect if somehow accessed without auth
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/auth', { replace: true, state: { from: location.pathname } });
+    }
+  }, [isAuthenticated, navigate, location.pathname]);
+
+  // Don't render anything if not authenticated
+  if (!isAuthenticated) {
+    return null;
+  }
+
   const navItems = [
-    { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, description: "Real-time Detection", roles: ['student', 'faculty', 'admin'] },
-    { path: "/leaderboard", label: "Leaderboard", icon: Trophy, description: "Impact Rankings", roles: ['student', 'faculty', 'admin'] },
-    { path: "/events", label: "Event Log", icon: History, description: "Activity Records", roles: ['student', 'faculty', 'admin'] },
-    { path: "/wallet", label: "Wallet", icon: WalletIcon, description: "Credits & Transfers", roles: ['student', 'faculty', 'admin'] },
-    { path: "/admin", label: "Admin Center", icon: Shield, description: "System Management", roles: ['admin'] },
+    { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, description: "Monitor activity", roles: ['student', 'faculty', 'admin'] },
+    { path: "/leaderboard", label: "Leaderboard", icon: Trophy, description: "Top contributors", roles: ['student', 'faculty', 'admin'] },
+    { path: "/events", label: "Activity", icon: History, description: "Event history", roles: ['student', 'faculty', 'admin'] },
+    { path: "/wallet", label: "Wallet", icon: WalletIcon, description: "Your credits", roles: ['student', 'faculty', 'admin'] },
+    { path: "/admin", label: "Admin", icon: Shield, description: "Manage system", roles: ['admin'] },
   ];
 
   // Filter navigation items based on user role
@@ -49,7 +62,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
 
   const handleLogout = () => {
     logout();
-    toast({ title: "Session Terminated", description: "Identity context has been cleared." });
+    toast({ title: "Signed Out", description: "You have been successfully signed out." });
     navigate("/");
   };
 
@@ -63,15 +76,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
       {/* Premium Industrial Navbar */}
       <header role="banner" className="fixed top-0 left-0 right-0 z-[100] h-20 border-b border-border/40 bg-white/80 backdrop-blur-xl flex items-center">
         <div className="container mx-auto px-6 flex items-center justify-between">
-          <Link to="/" aria-label="SCA Home" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center shadow-2xl shadow-slate-200 group-hover:rotate-6 transition-transform">
-              <Zap className="w-6 h-6 text-primary" />
-            </div>
-            <div className="flex flex-col leading-[0.9]">
-              <span className="text-lg font-black tracking-[0.05em] uppercase text-slate-900">Sustainable</span>
-              <span className="text-[12px] font-bold tracking-[0.1em] text-slate-400 uppercase">Campus Automation</span>
-            </div>
-          </Link>
+          <Logo linkTo="/" variant="light" />
 
           <div className="flex items-center gap-6">
             <div aria-hidden="true" className="hidden md:flex items-center gap-2 group cursor-help px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200/50 transition-colors hover:bg-slate-200/50">

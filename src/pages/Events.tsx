@@ -25,7 +25,6 @@ import {
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useToast } from "@/hooks/use-toast";
-import { useAuthStore } from "@/store/authStore";
 import {
   Dialog,
   DialogContent,
@@ -58,31 +57,36 @@ interface DetectionEvent {
 }
 
 const Events = () => {
-  const [events, setEvents] = useState<DetectionEvent[]>([]);
+  const [events, setEvents] = useState<cvApi.DetectionEvent[]>([]);
+  const [totalEvents, setTotalEvents] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAppending, setIsAppending] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [actionFilter, setActionFilter] = useState("all");
-  const [selectedEvent, setSelectedEvent] = useState<DetectionEvent | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<cvApi.DetectionEvent | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-  const [displayCount, setDisplayCount] = useState(10);
-  const { useMockData } = useAuthStore();
+  const [displayLimit, setDisplayLimit] = useState(20);
   const { toast } = useToast();
 
-  const loadEvents = useCallback(async () => {
-    setIsLoading(true);
+  const loadEvents = useCallback(async (append = false) => {
+    if (append) setIsAppending(true);
+    else setIsLoading(true);
+
     try {
       const result = await cvApi.getEvents({
-        limit: 100,
+        limit: displayLimit,
+        offset: append ? events.length : 0,
         search: searchQuery || undefined,
         action: actionFilter === "all" ? undefined : actionFilter
       });
 
       if (result.success && result.data) {
-        setEvents(result.data.events.map(e => ({
-          ...e,
-          action_type: e.action_type || "sustainable"
-        } as DetectionEvent)));
+        if (append) {
+          setEvents(prev => [...prev, ...result.data!.events]);
+        } else {
+          setEvents(result.data.events);
+          setTotalEvents(result.data.total);
+        }
       } else {
         toast({
           title: "Inquiry Failure",
@@ -98,65 +102,56 @@ const Events = () => {
       });
     } finally {
       setIsLoading(false);
+      setIsAppending(false);
     }
-  }, [searchQuery, actionFilter]);
+  }, [searchQuery, actionFilter, displayLimit, events.length, toast]);
 
-  useEffect(() => { loadEvents(); }, [loadEvents]);
-
-  // Effect to reload when filters change
   useEffect(() => {
     const timer = setTimeout(() => {
       loadEvents();
-    }, 500); // Debounce search
+    }, 400);
     return () => clearTimeout(timer);
-  }, [searchQuery, actionFilter, loadEvents]);
+  }, [searchQuery, actionFilter]);
 
   const actionTypes = useMemo(() => {
     const defaultActions = ["light_off", "fan_off", "ac_off", "ac_on", "light_on"];
-    const foundActions = Array.from(new Set(events.map(e => e.action_detected)));
+    const foundActions = Array.from(new Set(events.map(e => e.action_detected))).filter(Boolean);
     return Array.from(new Set([...defaultActions, ...foundActions]));
   }, [events]);
 
-  const handleExport = () => {
+  const handleExportLocal = () => {
     if (events.length === 0) return;
-
     const headers = ["Event_ID", "Timestamp", "Action", "Room", "Department", "Credits", "Energy_Saved_W"];
-    const rows = events.map(e => [
-      e.event_id,
-      e.timestamp,
-      e.action_detected,
-      e.room_id,
-      e.department,
-      e.blockchain_credits,
-      e.energy_saved_estimate
-    ]);
-
     const csvContent = [
       headers.join(","),
-      ...rows.map(row => row.join(","))
+      ...events.map(e => [
+        e.event_id, e.timestamp, e.action_detected, e.room_id, e.department, e.blockchain_credits, e.energy_saved_estimate
+      ].join(","))
     ].join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `SCA_Audit_Log_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
+    link.href = url;
+    link.download = `SCA_Current_View_${new Date().toISOString().slice(0, 13)}.csv`;
     link.click();
-    document.body.removeChild(link);
+    toast({ title: "View Exported", description: "Current filtered results extracted." });
+  };
 
-    toast({
-      title: "Archive Exported",
-      description: `Synchronized ledger has been extracted to CSV.`
-    });
+  const handleFullExport = async () => {
+    try {
+      await cvApi.exportEvents();
+      toast({ title: "Ledger Exported", description: "Official verified audit log downloaded." });
+    } catch (e: any) {
+      toast({ title: "Export Failed", description: e.message, variant: "destructive" });
+    }
   };
 
   const stats = useMemo(() => ({
-    total: events.length,
-    credits: events.reduce((s, e) => s + e.blockchain_credits, 0),
-    impact: events.reduce((s, e) => s + e.energy_saved_estimate, 0)
-  }), [events]);
+    total: totalEvents,
+    credits: events.reduce((s, e) => s + (e.blockchain_credits || 0), 0),
+    impact: events.reduce((s, e) => s + (e.energy_saved_estimate || 0), 0)
+  }), [events, totalEvents]);
 
   return (
     <DashboardLayout>
@@ -176,12 +171,18 @@ const Events = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            <Button onClick={loadEvents} variant="outline" className="h-10 px-5 rounded-xl border-slate-200 font-bold text-[10px] uppercase tracking-widest bg-white shadow-sm hover:bg-slate-50">
+            <Button onClick={() => loadEvents()} variant="outline" className="h-10 px-5 rounded-xl border-slate-200 font-bold text-[10px] uppercase tracking-widest bg-white shadow-sm hover:bg-slate-50">
               <RefreshCw className={cn("w-3.5 h-3.5 mr-2", isLoading && "animate-spin")} /> Refresh Buffer
             </Button>
-            <Button onClick={handleExport} disabled={events.length === 0} className="h-10 px-6 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest shadow-xl shadow-slate-200">
-              Export Logs
-            </Button>
+            <Select onValueChange={(v) => v === 'local' ? handleExportLocal() : handleFullExport()}>
+              <SelectTrigger className="h-10 px-6 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest shadow-xl shadow-slate-200 w-40">
+                <Download className="w-3.5 h-3.5 mr-2" /> Export
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="local">Current View</SelectItem>
+                <SelectItem value="full">Verified Ledger</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -189,8 +190,8 @@ const Events = () => {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
           {[
             { label: "Total Chronicle", value: stats.total, icon: <Box className="w-4 h-4" />, color: "text-slate-900" },
-            { label: "Ledger Proofs", value: `${stats.total} IDs`, icon: <ShieldCheck className="w-4 h-4" />, color: "text-primary" },
-            { label: "XP Velocity", value: `+${stats.credits}`, icon: <Zap className="w-4 h-4" />, color: "text-success" },
+            { label: "In-View Proofs", value: `${events.length} Loaded`, icon: <ShieldCheck className="w-4 h-4" />, color: "text-primary" },
+            { label: "XP Velocity", value: `+${stats.credits.toFixed(1)}`, icon: <Zap className="w-4 h-4" />, color: "text-success" },
             { label: "Energy Offset", value: `${(stats.impact / 1000).toFixed(1)} kWh`, icon: <Activity className="w-4 h-4" />, color: "text-slate-900" }
           ].map((stat, i) => (
             <Card key={i} className="p-6 bg-slate-50/50 border-slate-200/50 rounded-[32px] group hover:border-slate-300 transition-all">
@@ -222,7 +223,7 @@ const Events = () => {
                   id="lookup-event"
                   placeholder="Lookup Action or Room..."
                   value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-11 w-64 rounded-2xl bg-slate-50 border-none font-bold text-xs pl-10"
+                  className="h-11 w-full md:w-64 rounded-2xl bg-slate-50 border-none font-bold text-xs pl-10"
                 />
               </div>
               <Select value={actionFilter} onValueChange={setActionFilter}>
@@ -253,10 +254,9 @@ const Events = () => {
               </div>
             ) : (
               <>
-                {events.slice(0, displayCount).map((event) => (
+                {events.map((event) => (
                   <Card key={event.event_id} role="listitem" className="p-6 rounded-[32px] border-slate-100 hover:border-primary/20 transition-all group overflow-hidden relative">
-                    {/* Identity Ribbon */}
-                    <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-slate-50 group-hover:bg-primary/20 transition-colors" />
+                    <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-slate-100 group-hover:bg-primary/20 transition-colors" />
 
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pl-2">
                       <div className="flex items-start gap-5 flex-1">
@@ -266,7 +266,12 @@ const Events = () => {
                         <div className="space-y-1.5">
                           <div className="flex items-center gap-3">
                             <span className="text-base font-black tracking-tighter text-slate-900">{event.action_detected.toUpperCase()}</span>
-                            <Badge className="bg-success/5 text-success border-success/10 text-[8px] font-bold uppercase h-4 px-2">VERIFIED</Badge>
+                            <Badge className={cn(
+                              "text-[8px] font-bold uppercase h-4 px-2",
+                              event.action_type === 'sustainable' ? "bg-success/5 text-success border-success/10" : "bg-warning/5 text-warning border-warning/10"
+                            )}>
+                              {event.action_type === 'sustainable' ? 'VERIFIED' : 'OBSERVED'}
+                            </Badge>
                           </div>
                           <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest opacity-70">
                             <span className="flex items-center gap-1.5"><MapPin className="w-3 h-3" /> {event.room_id}</span>
@@ -288,9 +293,18 @@ const Events = () => {
                     </div>
                   </Card>
                 ))}
-                {displayCount < events.length && (
-                  <Button variant="ghost" onClick={() => setDisplayCount(c => c + 10)} className="w-full h-14 rounded-3xl text-[9px] font-black uppercase tracking-[0.4em] text-slate-300 hover:text-primary transition-all">
-                    Index Subsequent Blocks <ChevronRight className="w-4 h-4 ml-2" />
+                {events.length < totalEvents && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => loadEvents(true)}
+                    disabled={isAppending}
+                    className="w-full h-14 rounded-3xl text-[9px] font-black uppercase tracking-[0.4em] text-slate-300 hover:text-primary transition-all"
+                  >
+                    {isAppending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>Index Subsequent Blocks <ChevronRight className="w-4 h-4 ml-2" /></>
+                    )}
                   </Button>
                 )}
               </>
@@ -301,9 +315,9 @@ const Events = () => {
 
       {/* Audit Detail Terminal */}
       <Dialog open={isDetailModalOpen} onOpenChange={setIsDetailModalOpen}>
-        <DialogContent className="max-w-2xl rounded-[40px] p-8 border-none overflow-hidden">
+        <DialogContent className="max-w-2xl rounded-[40px] p-8 border-none overflow-hidden h-[90vh] flex flex-col">
           <div className="absolute top-0 left-0 w-full h-2 bg-slate-900" />
-          <DialogHeader className="mb-8">
+          <DialogHeader className="mb-8 shrink-0">
             <div className="flex items-center gap-3 mb-2">
               <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center">
                 <Terminal className="w-5 h-5 text-slate-900" />
@@ -314,19 +328,39 @@ const Events = () => {
           </DialogHeader>
 
           {selectedEvent && (
-            <div className="space-y-8">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="space-y-8 overflow-y-auto pr-2 custom-scrollbar">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 {[
                   { label: "Status", value: "FINALIZED", color: "text-success" },
                   { label: "Entity", value: selectedEvent.room_id },
                   { label: "Inference", value: `${Math.round(selectedEvent.overall_confidence * 100)}%` },
-                  { label: "Ledger ID", value: `#${selectedEvent.event_id}` }
+                  { label: "Ledger ID", value: `#${selectedEvent.event_id}` },
+                  { label: "Operator ID", value: selectedEvent.person_id || "SYSTEM" }
                 ].map((d, i) => (
                   <div key={i} className="p-4 bg-slate-50 rounded-2xl space-y-1 text-center">
                     <div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{d.label}</div>
                     <div className={cn("text-xs font-black truncate px-1", d.color || "text-slate-900")}>{d.value}</div>
                   </div>
                 ))}
+              </div>
+
+              {/* Video Evidence Section */}
+              <div className="space-y-4">
+                <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400 ml-1">Visual Evidence</div>
+                <Card className="aspect-video bg-slate-900 rounded-[32px] overflow-hidden relative group border border-white/5 shadow-2xl">
+                  {selectedEvent.video_file ? (
+                    <video
+                      src={`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/uploads/${selectedEvent.video_file}`}
+                      className="w-full h-full object-cover"
+                      controls
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-800/50">
+                      <Database className="w-12 h-12 text-slate-700 mb-4" />
+                      <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Video Stream Archived</p>
+                    </div>
+                  )}
+                </Card>
               </div>
 
               <div className="p-8 rounded-[32px] bg-slate-900 text-white space-y-6 relative overflow-hidden">
@@ -349,7 +383,7 @@ const Events = () => {
                 </div>
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-4 pb-8">
                 <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400 ml-1">Detection Metadata</div>
                 <div className="p-6 rounded-[32px] bg-slate-50 border border-slate-100 grid gap-4 text-xs font-medium text-slate-500">
                   <div className="flex justify-between border-b border-slate-200/50 pb-2">
@@ -366,12 +400,12 @@ const Events = () => {
                   </div>
                 </div>
               </div>
-
-              <div className="flex justify-center pt-4">
-                <Button variant="ghost" onClick={() => setIsDetailModalOpen(false)} className="font-black text-[10px] uppercase tracking-widest text-slate-300 hover:text-slate-900">Close Report</Button>
-              </div>
             </div>
           )}
+
+          <div className="shrink-0 flex justify-center pt-6 border-t border-slate-100 bg-white">
+            <Button variant="ghost" onClick={() => setIsDetailModalOpen(false)} className="font-black text-[10px] uppercase tracking-widest text-slate-300 hover:text-slate-900">Close Report</Button>
+          </div>
         </DialogContent>
       </Dialog>
     </DashboardLayout>

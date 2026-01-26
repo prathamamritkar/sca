@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import Logo from "@/components/Logo";
 import {
   Video,
   Award,
@@ -131,15 +132,7 @@ const Index = () => {
       {/* Premium Glass Navbar */}
       <header role="banner" className="fixed top-0 left-0 right-0 z-[100] border-b border-border/40 bg-white/70 backdrop-blur-xl">
         <div className="container mx-auto px-6 h-20 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20 group-hover:rotate-6 transition-transform">
-              <Leaf className="w-6 h-6 text-white" />
-            </div>
-            <div className="flex flex-col leading-[0.9]">
-              <span className="text-lg font-black tracking-[0.05em] uppercase">Sustainable</span>
-              <span className="text-[12px] font-bold tracking-[0.1em] uppercase">Campus Automation</span>
-            </div>
-          </Link>
+          <Logo linkTo="/" variant="default" />
 
           <nav className="hidden lg:flex items-center gap-10">
             {["Mission", "Technology", "Incentives", "Team", "Contact"].map((item) => (
@@ -173,9 +166,9 @@ const Index = () => {
 
       {/* Hero Section: The Visionary Entry */}
       <section className="relative pt-40 pb-24 overflow-hidden">
-        {/* Animated Background Shapes */}
-        <div className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/4 w-[600px] h-[600px] bg-primary/5 rounded-full blur-3xl -z-10 animate-pulse" />
-        <div className="absolute bottom-0 left-0 translate-y-1/2 -translate-x-1/4 w-[400px] h-[400px] bg-secondary/10 rounded-full blur-3xl -z-10" />
+        {/* Animated Background Shapes - Hidden on mobile to prevent overflow */}
+        <div className="hidden md:block absolute top-0 right-0 -translate-y-1/2 translate-x-1/4 w-[40vw] max-w-[600px] h-[40vw] max-h-[600px] bg-primary/5 rounded-full blur-3xl -z-10 animate-pulse" />
+        <div className="hidden md:block absolute bottom-0 left-0 translate-y-1/2 -translate-x-1/4 w-[30vw] max-w-[400px] h-[30vw] max-h-[400px] bg-secondary/10 rounded-full blur-3xl -z-10" />
 
         <div className="container mx-auto px-6">
           <div className="max-w-4xl mx-auto text-center space-y-10">
@@ -564,10 +557,7 @@ const Index = () => {
         <div className="container mx-auto px-6">
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-12 mb-20">
             <div className="col-span-2 space-y-6">
-              <div className="flex flex-col leading-[0.9]">
-                <span className="text-lg font-black tracking-[0.05em] uppercase text-slate-900">Sustainable</span>
-                <span className="text-[12px] font-bold tracking-[0.1em] text-slate-900 uppercase">Campus Automation</span>
-              </div>
+              <Logo showText={true} variant="default" linkTo={undefined} />
               <p className="text-slate-400 text-sm max-w-xs font-medium">
                 Pioneering the intersection of computer vision, blockchain, and environmental conservation to build the campus of 2030.
               </p>

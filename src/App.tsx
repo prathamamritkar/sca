@@ -12,6 +12,7 @@ import Admin from "./pages/Admin";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import ScrollToTop from "./components/ScrollToTop";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
@@ -23,14 +24,40 @@ const App = () => (
       <BrowserRouter>
         <ScrollToTop />
         <Routes>
+          {/* Public Routes */}
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/leaderboard" element={<Leaderboard />} />
-          <Route path="/events" element={<Events />} />
-          <Route path="/wallet" element={<Wallet />} />
-          <Route path="/admin" element={<Admin />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+
+          {/* Protected Routes - Require Authentication */}
+          <Route path="/dashboard" element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/leaderboard" element={
+            <ProtectedRoute>
+              <Leaderboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/events" element={
+            <ProtectedRoute>
+              <Events />
+            </ProtectedRoute>
+          } />
+          <Route path="/wallet" element={
+            <ProtectedRoute>
+              <Wallet />
+            </ProtectedRoute>
+          } />
+
+          {/* Admin Only Route - Requires 'admin' role */}
+          <Route path="/admin" element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <Admin />
+            </ProtectedRoute>
+          } />
+
+          {/* Catch-all for 404 */}
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
