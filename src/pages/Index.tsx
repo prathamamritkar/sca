@@ -41,7 +41,8 @@ const Index = () => {
   const [currentMember, setCurrentMember] = useState(0);
   const [isSending, setIsSending] = useState(false);
   const [formState, setFormState] = useState({ name: "", email: "", message: "" });
-  const [networkStats, setNetworkStats] = useState({ totalCredits: 124502, totalEvents: 0 });
+  const [networkStats, setNetworkStats] = useState({ totalCredits: 124502, totalEvents: 0, totalEnergy: 0 });
+  const [nodeStatus, setNodeStatus] = useState<'operational' | 'degraded' | 'offline'>('operational');
   const teamRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -67,8 +68,9 @@ const Index = () => {
         const result = await cvApi.getStats();
         if (result.success && result.data) {
           setNetworkStats({
-            totalCredits: result.data.total_credits_distributed || 124502,
-            totalEvents: result.data.total_events || 0
+            totalCredits: result.data.total_credits || 124502,
+            totalEvents: result.data.total_events || 0,
+            totalEnergy: result.data.total_energy_saved || 0
           });
         }
       } catch (e) {
@@ -76,13 +78,30 @@ const Index = () => {
       }
     };
 
+    const fetchNodeStatus = async () => {
+      try {
+        const response = await fetch(cvApi.getApiBaseUrl() + '/status');
+        if (response.ok) {
+          const data = await response.json();
+          setNodeStatus(data.status || 'operational');
+        } else {
+          setNodeStatus('offline');
+        }
+      } catch (e) {
+        setNodeStatus('offline');
+      }
+    };
+
     fetchStats();
+    fetchNodeStatus();
     const statsTimer = setInterval(fetchStats, 60000); // Refresh every minute
+    const statusTimer = setInterval(fetchNodeStatus, 30000); // Check status every 30 seconds
 
     return () => {
       observer.disconnect();
       if (timer) clearInterval(timer);
       if (statsTimer) clearInterval(statsTimer);
+      if (statusTimer) clearInterval(statusTimer);
     };
   }, []);
 
@@ -131,7 +150,7 @@ const Index = () => {
 
       {/* Premium Glass Navbar */}
       <header role="banner" className="fixed top-0 left-0 right-0 z-[100] border-b border-border/40 bg-white/70 backdrop-blur-xl">
-        <div className="container mx-auto px-6 h-20 flex items-center justify-between">
+        <div className="main-container h-20 flex items-center justify-between">
           <Logo linkTo="/" variant="default" />
 
           <nav className="hidden lg:flex items-center gap-10">
@@ -165,7 +184,7 @@ const Index = () => {
       </header>
 
       {/* Hero Section: The Visionary Entry */}
-      <section className="relative pt-40 pb-24 overflow-hidden">
+      <section className="relative pt-32 pb-20 overflow-hidden">
         {/* Animated Background Shapes - Hidden on mobile to prevent overflow */}
         <div className="hidden md:block absolute top-0 right-0 -translate-y-1/2 translate-x-1/4 w-[40vw] max-w-[600px] h-[40vw] max-h-[600px] bg-primary/5 rounded-full blur-3xl -z-10 animate-pulse" />
         <div className="hidden md:block absolute bottom-0 left-0 translate-y-1/2 -translate-x-1/4 w-[30vw] max-w-[400px] h-[30vw] max-h-[400px] bg-secondary/10 rounded-full blur-3xl -z-10" />
@@ -227,7 +246,7 @@ const Index = () => {
       </section>
 
       {/* Segregated Functionality: The Problem (Internal Context) */}
-      <section id="mission" className="py-24 bg-slate-50/50">
+      <section id="mission" className="py-20 bg-slate-50/50">
         <div className="container mx-auto px-6">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
             <div className="space-y-8">
@@ -273,6 +292,8 @@ const Index = () => {
           </div>
         </div>
       </section>
+
+
 
       {/* Technology Pillars (Segregated Interface) */}
       <section id="technology" className="py-32">
@@ -333,9 +354,10 @@ const Index = () => {
 
               <div className="space-y-6">
                 {[
-                  { icon: <Award className="w-5 h-5" />, title: "i2i Global Finalist", desc: "Recognized among the top sustainable tech innovations worldwide." },
-                  { icon: <Shield className="w-5 h-5" />, title: "IEEE AI Publication", desc: "Scientific validation of our computer vision and blockchain integration." },
-                  { icon: <Users className="w-5 h-5" />, title: "Ideathon Gold Medal", desc: "Winning solution for the AISSMS Campus Innovation Challenge." }
+                  { icon: <Award className="w-5 h-5" />, title: "SPPU Startup Bootcamp '25", desc: "Active Participant • Innovation & Incubation Center" },
+                  { icon: <Award className="w-5 h-5" />, title: "IEEE Inv.Ent Pitch '25", desc: "Regional Finalist • Technical Entrepreneurship" },
+                  { icon: <Globe className="w-5 h-5" />, title: "PCCOE Indradhanu '25", desc: "Semifinalist • International Grand Challenge" },
+                  { icon: <Target className="w-5 h-5" />, title: "IIT Delhi Moonshot 6.0", desc: "Quarter Finalist • eDC Disruptive Tech" }
                 ].map((item, i) => (
                   <div key={i} className="flex gap-4 group">
                     <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all">
@@ -368,7 +390,7 @@ const Index = () => {
 
                 <div className="space-y-6">
                   <div className="flex justify-between items-end">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-white/40">Total EP Generated</div>
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-white/40">Total Credits Issued</div>
                     <div className="text-3xl font-black text-primary tabular-nums">{networkStats.totalCredits.toLocaleString()}</div>
                   </div>
                   <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
@@ -377,6 +399,17 @@ const Index = () => {
                   <div className="flex justify-between text-[10px] font-bold text-white/40 uppercase tracking-widest">
                     <span>Target Score: 200K</span>
                     <span>{Math.min(((networkStats.totalCredits / 200000) * 100), 100).toFixed(1)}% Confirmed</span>
+                  </div>
+
+                  <div className="pt-4 border-t border-white/5 grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <div className="text-[9px] font-bold uppercase tracking-widest text-white/30">Energy Conserved</div>
+                      <div className="text-xl font-black text-white">{networkStats.totalEnergy.toLocaleString()} <span className="text-[10px] text-white/40">KW</span></div>
+                    </div>
+                    <div className="space-y-1 text-right">
+                      <div className="text-[9px] font-bold uppercase tracking-widest text-white/30">Active Events</div>
+                      <div className="text-xl font-black text-white">{networkStats.totalEvents.toLocaleString()}</div>
+                    </div>
                   </div>
                 </div>
               </Card>
@@ -421,9 +454,7 @@ const Index = () => {
                 />
               ))}
             </div>
-            <div className="text-center pt-4 uppercase tracking-[0.4em] text-[10px] font-bold text-slate-300">
-              Automated Identity Cycle
-            </div>
+
           </div>
         </div>
       </section>
@@ -540,7 +571,7 @@ const Index = () => {
                 Ready to Sync <br />Your Impact?
               </h2>
               <p className="max-w-xl mx-auto text-white/60 font-medium">
-                Join the decentralized movement of campus conservation. Register your node today and start earning EcoPoints for every watt you save.
+                Join the decentralized movement of campus conservation. Register your node today and start earning credits for every watt you save.
               </p>
               <div className="flex justify-center gap-4">
                 <Button onClick={handleCta} size="lg" className="h-16 px-12 rounded-2xl bg-primary text-slate-900 hover:bg-primary/90 font-black text-base shadow-xl shadow-primary/20">
@@ -566,8 +597,19 @@ const Index = () => {
             <div className="space-y-4">
               <h5 className="text-[10px] font-bold text-slate-900 uppercase tracking-widest mb-6">Internal Network</h5>
               <div className="flex flex-col gap-3">
-                {["Dashboard", "Leaderboard", "Events", "Wallet"].map(p => (
-                  <Link key={p} to={`/${p.toLowerCase()}`} className="text-sm font-medium text-slate-400 hover:text-primary transition-colors">{p}</Link>
+                {["Dashboard", "Leaderboard", "Ledger", "Wallet"].map(p => (
+                  isAuthenticated ? (
+                    <Link key={p} to={`/${p === 'Ledger' ? 'events' : p.toLowerCase()}`} className="text-sm font-medium text-slate-400 hover:text-primary transition-colors">{p}</Link>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => navigate('/auth')}
+                      className="text-sm font-medium text-slate-400 hover:text-primary transition-colors text-left"
+                      title="Login required"
+                    >
+                      {p}
+                    </button>
+                  )
                 ))}
               </div>
             </div>
@@ -583,9 +625,21 @@ const Index = () => {
 
             <div className="space-y-4">
               <h5 className="text-[10px] font-bold text-slate-900 uppercase tracking-widest mb-6">Status</h5>
-              <div className="flex items-center gap-2 text-xs font-bold text-success capitalize">
-                <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-                All Nodes Operational
+              <div className={cn(
+                "flex items-center gap-2 text-xs font-bold capitalize",
+                nodeStatus === 'operational' && "text-success",
+                nodeStatus === 'degraded' && "text-yellow-600",
+                nodeStatus === 'offline' && "text-destructive"
+              )}>
+                <div className={cn(
+                  "w-2 h-2 rounded-full animate-pulse",
+                  nodeStatus === 'operational' && "bg-success",
+                  nodeStatus === 'degraded' && "bg-yellow-600",
+                  nodeStatus === 'offline' && "bg-destructive"
+                )} />
+                {nodeStatus === 'operational' && 'All Nodes Operational'}
+                {nodeStatus === 'degraded' && 'Node Degraded'}
+                {nodeStatus === 'offline' && 'Node Offline'}
               </div>
             </div>
           </div>

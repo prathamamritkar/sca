@@ -8,6 +8,21 @@ from database import Database
 from energy_analyzer import EnergyAnalyzer
 from blockchain import BlockchainManager
 
+class NumpyEncoder(json.JSONEncoder):
+    """ Custom encoder for numpy data types """
+    def default(self, obj):
+        if isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
+                            np.int16, np.int32, np.int64, np.uint8,
+                            np.uint16, np.uint32, np.uint64)):
+            return int(obj)
+        elif isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
+            return float(obj)
+        elif isinstance(obj, (np.ndarray,)):
+            return obj.tolist()
+        elif isinstance(obj, (np.bool_)):
+            return bool(obj)
+        return json.JSONEncoder.default(self, obj)
+
 class CVProcessor:
     # Class-level cache for face cascades (shared across instances)
     _face_cascade = None
@@ -176,7 +191,7 @@ class CVProcessor:
             self.min_detections_for_verification = 3  # Fewer detections needed
             
         else:  # 'balanced' - Optimal F1 score
-            self.yolo_conf_threshold = 0.25  # Balanced confidence
+            self.yolo_conf_threshold = 0.28  # Balanced confidence
             self.person_match_threshold = 0.50  # Balanced matching
             self.device_validation_frames = 3  # Balanced validation
             self.action_confidence_min = 0.70  # Balanced action threshold
@@ -611,8 +626,10 @@ class CVProcessor:
                 bbox = [int(x1), int(y1), int(x2), int(y2)]
                 device_type = device_classes[class_id]
                 
-                # Generate unique device ID based on spatial location for temporal tracking
-                device_id = f"{device_type}_{int(x1)}_{int(y1)}"
+                # Spatial quantization (20px grid) to prevent jitter from breaking temporal tracking
+                grid_x = (int(x1) // 20) * 20
+                grid_y = (int(y1) // 20) * 20
+                device_id = f"{device_type}_{grid_x}_{grid_y}"
                 
                 device_info = {
                     'type': device_type,
@@ -754,10 +771,10 @@ class CVProcessor:
             "timestamp": datetime.now().isoformat(),
             "room_id": self.room_id,
             "department": self.department,  # Campus: track by department
-            "location_verified": location_status['verified'],
-            "location_confidence": round(location_status['confidence'], 2),
-            "overall_confidence": round(overall_confidence, 2),  # NEW: Overall detection confidence
-            "occupancy": occupancy,
+            "location_verified": bool(location_status['verified']),
+            "location_confidence": float(round(location_status['confidence'], 2)),
+            "overall_confidence": float(round(overall_confidence, 2)),  # NEW: Overall detection confidence
+            "occupancy": bool(occupancy),
             "person_count": person_count,
             "recognized_persons": recognized_persons if recognized_persons else [],
             "devices_detected": devices,
@@ -766,9 +783,9 @@ class CVProcessor:
             "lights_on": lights_on,
             "action_detected": action_result['action_detected'],
             "action_type": action_result['action_type'],
-            "action_confidence": action_result.get('confidence', 0.7),  # NEW: Action detection confidence
-            "energy_saved_estimate": action_result.get('energy_impact', energy_metrics['power_saved_watts']),
-            "blockchain_credits": action_result.get('blockchain_credits', 0.0),
+            "action_confidence": float(action_result.get('confidence', 0.7)),  # NEW: Action detection confidence
+            "energy_saved_estimate": round(float(action_result.get('energy_impact', energy_metrics['power_saved_watts'])), 2),
+            "blockchain_credits": round(float(action_result.get('blockchain_credits', 0.0)), 2),
             "waste_multiplier": action_result.get('waste_multiplier', 1.0),  # Campus priority multiplier
             "priority_devices": action_result.get('priority_devices', {}),  # Projector/AC flags
             "video_file": video_file,
@@ -805,24 +822,27 @@ class CVProcessor:
                             person['person_id'],
                             action_type,
                             {'action': action_desc, 'energy_impact': event['energy_saved_estimate']},
-                            incentive_points=int(credits),
+                            incentive_points=round(float(credits), 2),
                             incentive_reason=f"Verified {action_type} action: {action_desc}"
                         )
                         
-                        # Actual Blockchain Transaction (Real Testnet Support)
-                        if action_type == 'sustainable':
-                            # Check for real wallet address in database, fallback to pseudo-wallet
-                            wallet = person.get('wallet_address')
-                            if not wallet:
-                                import hashlib
-                                wallet = f"0x{hashlib.sha256(person['person_id'].encode()).hexdigest()[:40]}"
-                                
-                            self.blockchain.mint_credits(
-                                target_address=wallet, 
-                                amount=int(credits),
-                                action_type=action_desc,
-                                room_id=self.room_id
-                            )
+                    """
+                    # Actual Blockchain Transaction (Real Testnet Support)
+                    # Moved to Admin Audit workflow for human-in-the-loop verification
+                    if action_type == 'sustainable':
+                        # Check for real wallet address in database, fallback to pseudo-wallet
+                        wallet = person.get('wallet_address')
+                        if not wallet:
+                            import hashlib
+                            wallet = f"0x{hashlib.sha256(person['person_id'].encode()).hexdigest()[:40]}"
+                            
+                        self.blockchain.mint_credits(
+                            target_address=wallet, 
+                            amount=int(credits),
+                            action_type=action_desc,
+                            room_id=self.room_id
+                        )
+                    """
                     
                     # Log event entry linked to this person
                     event_data = {
@@ -835,6 +855,8 @@ class CVProcessor:
                         'bbox': person.get('bbox'),
                         'face_bbox': person.get('face_bbox'),
                         'confidence': person.get('confidence'),
+                        'overall_confidence': event['overall_confidence'],
+                        'action_confidence': event['action_confidence'],
                         'detection_method': person.get('detection_method'),
                         'devices_detected': devices,
                         'devices_on': devices_on,
@@ -893,7 +915,7 @@ class CVProcessor:
             }
         
         with open(output_path, 'w') as f:
-            json.dump(logs_summary, f, indent=2)
+            json.dump(logs_summary, f, indent=2, cls=NumpyEncoder)
         
         print(f"✓ Saved person logs to {output_path}")
         return logs_summary
@@ -919,6 +941,10 @@ class CVProcessor:
         
         # Reset temporal state for new session
         self.reset_temporal_state()
+        
+        # Set deterministic time for uploaded video audits (12 PM)
+        if mode == 'uploaded':
+            self.energy_analyzer.set_simulation_time(12)
         
         # update thresholds
         self.yolo_conf_threshold = confidence_threshold
@@ -1006,7 +1032,7 @@ class CVProcessor:
             output_file = f"outputs/events_{timestamp_str}.json"
             
         with open(output_file, 'w') as f:
-            json.dump(events, f, indent=2)
+            json.dump(events, f, indent=2, cls=NumpyEncoder)
         
         # Save person logs
         person_logs_file = f"outputs/person_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"

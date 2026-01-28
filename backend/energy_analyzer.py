@@ -68,15 +68,26 @@ class EnergyAnalyzer:
             self.buffer_size = 2  # Fewer frames for high recall
             self.action_confidence_threshold = 0.60
         else:  # balanced
-            self.buffer_size = 3  # Balanced
-            self.action_confidence_threshold = 0.70
+            self.buffer_size = 5  # Increased for better F1 stability
+            self.action_confidence_threshold = 0.75
             
     def reset_state(self):
         """Reset temporal buffers for a new session"""
         self.device_state_buffer = {}
         self.occupancy_buffer = []
         self.previous_state = {}
+        self.simulation_hour = None # Reset simulation time
         print(f"↺ EnergyAnalyzer state synchronized for {self.room_id}")
+
+    def set_simulation_time(self, hour):
+        """Set a fixed simulation time for deterministic analysis"""
+        self.simulation_hour = hour
+
+    def _get_current_hour(self):
+        """Get the hour to use for context (real or simulated)"""
+        if hasattr(self, 'simulation_hour') and self.simulation_hour is not None:
+            return self.simulation_hour
+        return datetime.now().hour
 
     def log_action(self, action_result):
         """Log an action result for performance metric calculation"""
@@ -173,7 +184,12 @@ class EnergyAnalyzer:
                     most_common_state = max(state_counts, key=state_counts.get)
                     
                     # Adaptive consensus requirement based on optimization mode
-                    required_consensus = self.buffer_size - 1 if self.optimization_mode == 'precision' else max(self.buffer_size // 2, 1)
+                    if self.optimization_mode == 'precision':
+                        required_consensus = self.buffer_size - 1
+                    elif self.optimization_mode == 'recall':
+                        required_consensus = max(self.buffer_size // 2, 1)
+                    else: # balanced
+                        required_consensus = (self.buffer_size // 2) + 1
                     
                     if state_counts[most_common_state] >= required_consensus:
                         validated = True
@@ -223,8 +239,8 @@ class EnergyAnalyzer:
         # Calculate average brightness
         avg_brightness = np.mean(gray)
         
-        # Check time of day (simplified - would use actual time in production)
-        current_hour = datetime.now().hour
+        # Check time of day (deterministic context)
+        current_hour = self._get_current_hour()
         is_daytime = 6 <= current_hour <= 18
         
         # Determine threshold based on time
@@ -250,112 +266,118 @@ class EnergyAnalyzer:
     
     def detect_sustainable_action(self, current_devices, previous_devices, occupancy, previous_occupancy):
         """
-        Detect sustainable or unsustainable actions with confidence scoring
-        
-        Args:
-            current_devices: Current detected devices
-            previous_devices: Previously detected devices
-            occupancy: Current occupancy status
-            previous_occupancy: Previous occupancy status
-            
-        Returns:
-            dict: {action_type, action_detected, energy_impact, credits, confidence}
+        Detect sustainable or unsustainable actions with extreme logic and intent analysis
         """
         action = {
             'action_type': 'neutral',
             'action_detected': None,
             'energy_impact': 0.0,
             'blockchain_credits': 0.0,
-            'confidence': 0.5,  # Base confidence
+            'confidence': 0.5,
             'description': ''
         }
+        
+        # Energy Impact Formula: [Power Previous - Power Current]
+        # Positive = Energy Saved (Reward)
+        # Negative = Energy Wasted / Increased (Penalty)
+        energy_impact_raw = self._calculate_power_difference(previous_devices, current_devices)
+        
+        curr_on = self._count_devices_on(current_devices)
+        prev_on = self._count_devices_on(previous_devices)
+        
+        # Time Context for Penalties
+        current_hour = self._get_current_hour()
+        is_after_hours = not (self.CLASS_HOURS_START <= current_hour < self.CLASS_HOURS_END)
         
         # Calculate device state validation confidence
         validated_devices = [d for d in current_devices if d.get('validated', False)]
         device_confidence = len(validated_devices) / len(current_devices) if current_devices else 0.5
         
-        # Scenario 1: Person left room but devices still ON (UNSUSTAINABLE - Campus Priority)
+        has_ac_on = any(d.get('type') == 'ac' and d.get('state') == 'ON' for d in current_devices)
+        has_projector_on = any(d.get('type') == 'projector' and d.get('state') == 'ON' for d in current_devices)
+
+        # LOGIC 1: UNSUSTAINABLE - Negligence (Leaving room without turning off)
         if not occupancy and previous_occupancy:
-            devices_left_on = self._count_devices_on(current_devices)
-            if devices_left_on > 0:
-                energy_wasted = self._calculate_device_power(current_devices)
-                
-                # Campus-specific: Check for high-priority devices
-                has_projector = any(d.get('type') == 'projector' and d.get('state') == 'ON' for d in current_devices)
-                has_ac = any(d.get('type') == 'ac' and d.get('state') == 'ON' for d in current_devices)
-                
-                # Apply priority multipliers
+            if curr_on > 0:
+                # We calculate waste based on everything currently ON
+                negligence_waste = -self._calculate_device_power(current_devices)
                 multiplier = self.EMPTY_CLASSROOM_MULTIPLIER
-                if has_projector:
-                    multiplier *= self.PROJECTOR_WASTE_PRIORITY
-                if has_ac:
-                    multiplier *= self.AC_WASTE_PRIORITY
-                
-                # Calculate confidence based on device validation
-                action_confidence = 0.6 + (device_confidence * 0.4)  # 60-100% confidence
+                if has_ac_on: multiplier *= self.AC_WASTE_PRIORITY
+                if has_projector_on: multiplier *= self.PROJECTOR_WASTE_PRIORITY
+                if is_after_hours: multiplier *= 2.0 # Extra penalty for after-hours negligence
                 
                 action['action_type'] = 'unsustainable'
-                action['action_detected'] = 'empty_classroom_waste' if (has_projector or has_ac) else 'devices_left_on_empty_room'
-                action['energy_impact'] = -energy_wasted
-                action['waste_multiplier'] = multiplier
-                action['confidence'] = round(action_confidence, 2)
-                action['priority_devices'] = {
-                    'projector_on': has_projector,
-                    'ac_on': has_ac
-                }
-                action['description'] = f'{devices_left_on} device(s) left ON in empty classroom (Priority: {"HIGH" if multiplier > 2 else "MEDIUM"})'
+                action['action_detected'] = 'exit_negligence'
+                action['energy_impact'] = negligence_waste
+                action['blockchain_credits'] = self._calculate_credits(negligence_waste, multiplier=multiplier)
+                action['confidence'] = round(0.75 + (device_confidence * 0.25), 2)
+                action['description'] = f'NEGLIGENCE: Left {curr_on} devices ON. Penalty: {multiplier}x impact.'
                 self.log_action(action)
                 return action
-        
-        # Scenario 2: Devices turned OFF when leaving (SUSTAINABLE - Campus Bonus)
-        prev_on = self._count_devices_on(previous_devices)
-        curr_on = self._count_devices_on(current_devices)
-        
-        if prev_on > curr_on and not occupancy:
-            devices_turned_off = prev_on - curr_on
-            energy_saved = self._calculate_power_difference(previous_devices, current_devices)
+
+        # LOGIC 2: UNSUSTAINABLE - Deliberate Waste (Turning ON in empty room)
+        if not occupancy and not previous_occupancy and curr_on > prev_on:
+            # Impact is already negative because curr_on > prev_on
+            waste_impact = energy_impact_raw 
+            malice_multiplier = 3.0 
+            if has_ac_on: malice_multiplier *= self.AC_WASTE_PRIORITY
+            if is_after_hours: malice_multiplier *= 2.0
             
-            # Campus bonus for turning off high-priority devices
-            has_projector = any(d.get('type') == 'projector' and d.get('state') == 'OFF' for d in current_devices)
-            has_ac = any(d.get('type') == 'ac' and d.get('state') == 'OFF' for d in current_devices)
-            multiplier = 1.5 if (has_projector or has_ac) else 1.0
-            
-            # Higher confidence for well-validated state changes
-            action_confidence = 0.7 + (device_confidence * 0.3)
-            
-            action['action_type'] = 'sustainable'
-            action['action_detected'] = 'devices_turned_off_on_exit'
-            action['energy_impact'] = energy_saved
-            action['confidence'] = round(action_confidence, 2)
-            action['blockchain_credits'] = self._calculate_credits(energy_saved, duration_hours=self.LAB_SESSION_HOURS, multiplier=multiplier)
-            action['description'] = f'{devices_turned_off} device(s) turned OFF on exit (Campus bonus: {multiplier}x)'
-            self.log_action(action)
-            return action
-        
-        # Scenario 3: Devices turned ON unnecessarily (UNSUSTAINABLE)
-        if curr_on > prev_on and not occupancy:
-            action_confidence = 0.65 + (device_confidence * 0.35)
             action['action_type'] = 'unsustainable'
-            action['action_detected'] = 'devices_turned_on_empty_room'
-            action['energy_impact'] = -self._calculate_power_difference(current_devices, previous_devices)
-            action['confidence'] = round(action_confidence, 2)
-            action['description'] = 'Devices turned ON in empty room'
+            action['action_detected'] = 'deliberate_waste'
+            action['energy_impact'] = waste_impact
+            action['blockchain_credits'] = self._calculate_credits(waste_impact, multiplier=malice_multiplier)
+            action['confidence'] = round(0.8 + (device_confidence * 0.2), 2)
+            action['description'] = 'MALICE: Potential energy spoofing/waste in empty room.'
             self.log_action(action)
             return action
-        
-        # Scenario 4: Efficient device usage during class (SUSTAINABLE)
-        if occupancy and curr_on < prev_on:
-            energy_saved = self._calculate_power_difference(previous_devices, current_devices)
-            action_confidence = 0.75 + (device_confidence * 0.25)  # Higher base confidence for this scenario
+
+        # LOGIC 3: SUSTAINABLE - Social Responsibility (Entering and cleaning up)
+        if occupancy and not previous_occupancy:
+            # If they turned OFF things left by the previous person
+            if energy_impact_raw > 0:
+                cleanup_multiplier = 2.0 
+                action['action_type'] = 'sustainable'
+                action['action_detected'] = 'social_cleanup'
+                action['energy_impact'] = energy_impact_raw
+                action['blockchain_credits'] = self._calculate_credits(energy_impact_raw, multiplier=cleanup_multiplier)
+                action['confidence'] = round(0.85 + (device_confidence * 0.15), 2)
+                action['description'] = 'SOCIAL BOUNTY: Voluntary waste reduction on entry.'
+                self.log_action(action)
+                return action
+
+        # LOGIC 4: SUSTAINABLE - Proactive Exit (Turning off when leaving)
+        if not occupancy and previous_occupancy and curr_on == 0 and prev_on > 0:
+            # energy_impact_raw is positive here
+            reward_multiplier = 1.5 
             action['action_type'] = 'sustainable'
-            action['action_detected'] = 'efficient_device_usage'
-            action['energy_impact'] = energy_saved
-            action['confidence'] = round(action_confidence, 2)
-            action['blockchain_credits'] = self._calculate_credits(energy_saved, duration_hours=self.LAB_SESSION_HOURS)
-            action['description'] = 'Device(s) turned OFF during class (efficient usage)'
+            action['action_detected'] = 'proactive_exit_shutdown'
+            action['energy_impact'] = energy_impact_raw
+            action['blockchain_credits'] = self._calculate_credits(energy_impact_raw, multiplier=reward_multiplier)
+            action['confidence'] = round(0.8 + (device_confidence * 0.2), 2)
+            action['description'] = 'SUSTAINABLE: Responsible power-down confirmed.'
             self.log_action(action)
             return action
+
+        # LOGIC 5: SUSTAINABLE - Mid-Session Optimization
+        if occupancy and previous_occupancy and energy_impact_raw > 0:
+            action['action_type'] = 'sustainable'
+            action['action_detected'] = 'active_optimization'
+            action['energy_impact'] = energy_impact_raw
+            action['blockchain_credits'] = self._calculate_credits(energy_impact_raw)
+            action['confidence'] = round(0.75 + (device_confidence * 0.25), 2)
+            action['description'] = 'SUSTAINABLE: Real-time efficiency adjustment.'
+            self.log_action(action)
+            return action
+
+        # LOGIC 6: NEUTRAL - Legitimate Use
+        if occupancy:
+            action['description'] = 'NEUTRAL: Documented consumption during activity.'
+            # Note: We don't return here so it can fallback to default neutral
         
+        self.log_action(action)
+        return action
+
         self.log_action(action)
         return action
     
@@ -386,31 +408,29 @@ class EnergyAnalyzer:
     def _calculate_credits(self, watts_saved, duration_hours=1.0, multiplier=1.0):
         """
         Calculate blockchain credits based on energy saved (Campus optimized)
+        Supports negative values for sustainable 'penalties'
         
         Args:
-            watts_saved: Power saved in Watts
-            duration_hours: Duration in hours (campus default: 3 hours for lab session)
-            multiplier: Priority multiplier for high-waste scenarios
+            watts_saved: Power saved in Watts (can be negative for waste)
+            duration_hours: Duration in hours
+            multiplier: Priority multiplier
             
         Returns:
-            float: Credits in ₹
+            float: Credits in ₹ (positive for savings, negative for waste)
         """
-        if watts_saved <= 0:
-            return 0.0
-        
         # Campus timing: Use lab session duration if not specified
         if duration_hours == 1.0:
-            current_hour = datetime.now().hour
+            current_hour = self._get_current_hour()
             if self.CLASS_HOURS_START <= current_hour <= self.CLASS_HOURS_END:
                 duration_hours = self.LAB_SESSION_HOURS  # 3-hour lab session
             else:
                 duration_hours = 0.5  # After-hours usage
         
         # Convert to kWh
-        kwh_saved = (watts_saved * duration_hours) / 1000
+        kwh_impact = (watts_saved * duration_hours) / 1000
         
         # Calculate credits with campus multiplier
-        credits = kwh_saved * self.CREDIT_RATE_PER_KWH * multiplier
+        credits = kwh_impact * self.CREDIT_RATE_PER_KWH * multiplier
         
         # Round to 2 decimal places
         return round(credits, 2)

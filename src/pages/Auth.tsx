@@ -178,7 +178,7 @@ const Auth = () => {
                     <Logo linkTo="/" variant="dark" />
                 </div>
 
-                <div className="relative z-10 max-w-lg p-12 space-y-8">
+                <div className="relative z-10 max-w-lg p-[var(--space-xl)] space-y-[var(--space-md)]">
                     <div className="space-y-4">
                         <Badge className="bg-primary/20 text-primary border-primary/30 h-6 px-4 font-bold tracking-widest text-[9px]">ENTERPRISE LAYER v2.4</Badge>
                         <h1 className="text-5xl font-black text-white leading-tight tracking-tighter">

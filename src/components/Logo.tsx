@@ -85,7 +85,7 @@ const Logo = ({
 
             {/* Text */}
             {showText && (
-                <div className="flex flex-col leading-[0.9]">
+                <div className="flex flex-col leading-none gap-0.5">
                     <span className={cn(s.textPrimary, v.textPrimary, "uppercase")}>
                         Sustainable
                     </span>

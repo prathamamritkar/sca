@@ -9,11 +9,19 @@ from functools import wraps
 from flask import request, jsonify, g
 import os
 
-# JWT Configuration
-JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'sca-campus-sustainability-secret-key-2026')
+# Import configuration
+try:
+    from config import config
+    JWT_SECRET_KEY = config.JWT_SECRET_KEY
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=config.JWT_ACCESS_TOKEN_EXPIRES_HOURS)
+    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=config.JWT_REFRESH_TOKEN_EXPIRES_DAYS)
+except ImportError:
+    # Fallback if config not available
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'sca-campus-sustainability-secret-key-2026')
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)
+    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=7)
+
 JWT_ALGORITHM = 'HS256'
-JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)
-JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=7)
 
 
 def hash_password(password: str) -> str:

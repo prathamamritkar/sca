@@ -9,13 +9,13 @@ import {
   RefreshCw,
   Trash2,
   Database,
-  Terminal,
   Cpu,
   Zap,
   Activity,
   ChevronRight,
   Wifi,
-  WifiOff
+  WifiOff,
+  LayoutDashboard
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -32,8 +32,8 @@ interface DetectionResult {
   timestamp: string;
   action: string;
   location: string;
-  confidence: number;
-  pointsAwarded: number;
+  fidelity: number;
+  creditsEarned: number;
   actionType?: 'sustainable' | 'unsustainable' | 'neutral';
   energySaved?: number;
 }
@@ -65,13 +65,13 @@ const Dashboard = () => {
     try {
       const response = await cvApi.getEvents({ limit: 10 });
       if (response.success && response.data) {
-        const converted: DetectionResult[] = response.data.events.map((e) => ({
+        const converted: DetectionResult[] = (response.data.events || []).map((e) => ({
           id: e.event_id,
           timestamp: e.timestamp,
           action: e.action_detected || 'unknown',
           location: e.room_id || 'Unknown',
-          confidence: e.overall_confidence || 0.9,
-          pointsAwarded: e.blockchain_credits || 0,
+          fidelity: e.overall_confidence || 0.9,
+          creditsEarned: e.blockchain_credits || 0,
           actionType: e.action_type,
           energySaved: e.energy_saved_estimate
         }));
@@ -88,9 +88,9 @@ const Dashboard = () => {
   }, [checkApiConnection, fetchLatestEvents]);
 
   const sessionStats = useMemo(() => {
-    const totalCredits = detectionResults.reduce((sum, d) => sum + d.pointsAwarded, 0);
+    const totalCredits = detectionResults.reduce((sum, d) => sum + d.creditsEarned, 0);
     const averageConfidence = detectionResults.length > 0
-      ? Math.round(detectionResults.reduce((sum, d) => sum + d.confidence, 0) / detectionResults.length * 100)
+      ? Math.round(detectionResults.reduce((sum, d) => sum + d.fidelity, 0) / detectionResults.length * 100)
       : 0;
     return { totalActions: detectionResults.length, totalCredits, averageConfidence, uniqueLocations: new Set(detectionResults.map(d => d.location)).size };
   }, [detectionResults]);
@@ -118,16 +118,17 @@ const Dashboard = () => {
         timestamp: e.timestamp,
         action: e.action_detected || 'unknown',
         location: e.room_id || 'Unknown',
-        confidence: e.overall_confidence || 0.9,
-        pointsAwarded: e.blockchain_credits || 0,
+        fidelity: e.overall_confidence || 0.9,
+        creditsEarned: e.blockchain_credits || 0,
         actionType: e.action_type,
         energySaved: e.energy_saved_estimate
       }));
 
       setDetectionResults(prev => [...converted, ...prev]);
-      toast({ title: "Inference Complete", description: `Successfully parsed ${converted.length} events from stream.` });
+      toast({ title: "Signal Audit Complete", description: `Successfully parsed ${converted.length} signals from stream.` });
     } catch (err: any) {
-      toast({ title: "Neural Link Error", description: err.message, variant: "destructive" });
+      const errorMessage = err.response?.data?.error || err.message || "An unexpected error occurred during AI inference.";
+      toast({ title: "Neural Link Error", description: errorMessage, variant: "destructive" });
     } finally {
       setIsProcessing(false);
     }
@@ -135,17 +136,17 @@ const Dashboard = () => {
 
   return (
     <DashboardLayout>
-      <div className="space-y-12">
+      <div className="page-section">
         {/* Futuristic Workspace Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8 pb-6 border-b border-slate-100">
-          <div className="space-y-3">
+        <div className="section-header md:flex-row md:items-center md:justify-between">
+          <div className="space-y-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center border border-primary/20">
-                <Terminal className="w-5 h-5 text-primary" />
+              <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center border border-slate-700 shadow-2xl shadow-slate-200">
+                <LayoutDashboard className="w-5 h-5 text-primary" />
               </div>
               <h1 className="text-4xl font-black tracking-tighter text-slate-900 uppercase">Dashboard</h1>
             </div>
-            <p className="text-slate-500 font-medium max-w-xl text-sm leading-relaxed">
+            <p className="text-slate-500 font-medium max-w-2xl text-sm leading-relaxed">
               Monitor your campus energy savings in real-time. Every action is verified and rewarded.
             </p>
           </div>
@@ -160,24 +161,24 @@ const Dashboard = () => {
                 </span>
               </div>
             </div>
-            <Button variant="ghost" size="sm" onClick={fetchLatestEvents} className="h-10 px-4 rounded-xl text-primary hover:bg-primary/5 font-medium text-sm transition-all">
-              <RefreshCw className="w-4 h-4 mr-2" /> Refresh
+            <Button variant="outline" size="sm" onClick={fetchLatestEvents} className="h-10 px-5 rounded-xl border-slate-200 font-bold text-[10px] uppercase tracking-widest bg-white shadow-sm hover:bg-slate-50 transition-all text-slate-600">
+              <RefreshCw className="w-3.5 h-3.5 mr-2" /> Refresh
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setDetectionResults([])} className="h-10 px-4 rounded-xl text-destructive hover:bg-destructive/5 font-medium text-sm transition-all">
-              <Trash2 className="w-4 h-4 mr-2" /> Clear
+            <Button variant="outline" size="sm" onClick={() => setDetectionResults([])} className="h-10 px-5 rounded-xl border-slate-200 font-bold text-[10px] uppercase tracking-widest bg-white shadow-sm text-destructive hover:bg-destructive/5 transition-all">
+              <Trash2 className="w-3.5 h-3.5 mr-2" /> Clear
             </Button>
           </div>
         </div>
 
         {/* Distributed Metrics Table */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="stat-grid">
           {[
-            { label: "Actions Detected", value: sessionStats.totalActions, icon: <Activity className="w-4 h-4" />, color: "text-slate-900" },
-            { label: "Credits Earned", value: `+${sessionStats.totalCredits}`, icon: <Zap className="w-4 h-4" />, color: "text-primary" },
-            { label: "Accuracy", value: `${sessionStats.averageConfidence}%`, icon: <Cpu className="w-4 h-4" />, color: "text-slate-900" },
-            { label: "Locations", value: sessionStats.uniqueLocations, icon: <Database className="w-4 h-4" />, color: "text-slate-900" }
+            { label: "Signals Captured", value: sessionStats.totalActions, icon: <Activity className="w-4 h-4" />, color: "text-slate-900" },
+            { label: "Credits Earned", value: `${sessionStats.totalCredits.toFixed(2)}`, icon: <Zap className="w-4 h-4" />, color: "text-primary" },
+            { label: "Signal Fidelity", value: `${sessionStats.averageConfidence}%`, icon: <Cpu className="w-4 h-4" />, color: "text-slate-900" },
+            { label: "Station Nodes", value: sessionStats.uniqueLocations, icon: <Database className="w-4 h-4" />, color: "text-slate-900" }
           ].map((stat, i) => (
-            <Card key={i} className="p-6 bg-slate-50/50 border-slate-200/50 rounded-[32px] hover:border-primary/20 transition-all group cursor-default">
+            <Card key={i} className="p-5 bg-slate-50/50 border-slate-200/50 rounded-[32px] hover:border-primary/20 transition-all group cursor-default">
               <div className="flex items-center justify-between mb-4">
                 <div className="p-2 rounded-xl bg-white border border-slate-200/50 text-slate-400 group-hover:text-primary transition-colors">
                   {stat.icon}
@@ -191,33 +192,33 @@ const Dashboard = () => {
           ))}
         </div>
 
-        {/* Input Interface - Neural Feed */}
-        <div className="grid lg:grid-cols-[1fr_380px] gap-8">
-          <Card className="relative overflow-hidden group border-2 border-dashed border-slate-200 rounded-[48px] bg-slate-50/30 hover:bg-slate-50/80 transition-all p-12 flex items-center justify-center">
+        {/* Input Interface - Signal Stream */}
+        <div className="grid lg:grid-cols-[1fr_380px] gap-[var(--space-md)]">
+          <Card className="relative overflow-hidden group border-2 border-dashed border-slate-200 rounded-[32px] bg-slate-50/30 hover:bg-slate-50/80 transition-all p-6 md:p-10 flex items-center justify-center">
             <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
               <Upload className="w-48 h-48 rotate-12" />
             </div>
-            <div className="relative z-10 text-center space-y-8">
+            <div className="relative z-10 text-center space-y-6">
               <div className="space-y-4 max-w-sm mx-auto">
-                <div className="w-20 h-20 rounded-[32px] bg-white shadow-2xl shadow-slate-200 flex items-center justify-center mx-auto border border-slate-100">
+                <div className="w-20 h-20 rounded-[20px] bg-white shadow-2xl shadow-slate-200 flex items-center justify-center mx-auto border border-slate-100">
                   <Upload className="w-10 h-10 text-slate-400 group-hover:text-primary transition-colors" />
                 </div>
-                <div className="space-y-2 text-center">
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight">Inject Feed</h3>
-                  <p className="text-xs font-medium text-slate-500 leading-relaxed">Point the AI model towards a campus CCTV stream for immediate behavioral analysis.</p>
+                <div className="space-y-1 text-center">
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight">Inject Signal</h3>
+                  <p className="text-xs font-medium text-slate-500 leading-relaxed">Point the AI model towards a campus station for immediate signal analysis.</p>
                 </div>
               </div>
 
               <div className="flex flex-wrap justify-center gap-4">
                 <input type="file" accept="video/*" onChange={handleFileUpload} className="hidden" id="dash-upload" />
                 <label htmlFor="dash-upload">
-                  <Button asChild variant="outline" aria-label="Select Video Source" className="h-14 px-8 rounded-2xl border-2 font-bold text-xs uppercase tracking-widest bg-white shadow-lg shadow-slate-100 hover:shadow-primary/10 transition-all cursor-pointer">
+                  <Button asChild variant="outline" aria-label="Select Video Source" className="h-12 px-8 rounded-2xl border-2 font-bold text-xs uppercase tracking-widest bg-white shadow-lg shadow-slate-100 hover:shadow-primary/10 transition-all cursor-pointer">
                     <span>{videoFile ? "Queue Replace" : "Select Source"}</span>
                   </Button>
                 </label>
                 {videoFile && (
-                  <Button onClick={handleProcessVideo} aria-label="Start Processing Video" disabled={isProcessing} className="h-14 px-10 rounded-2xl bg-slate-900 text-white font-black text-xs uppercase tracking-widest shadow-2xl shadow-slate-200 group">
-                    {isProcessing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Executing...</> : <><Play className="w-4 h-4 mr-3" /> Initialise Inference</>}
+                  <Button onClick={handleProcessVideo} aria-label="Start Processing Video" disabled={isProcessing} className="h-12 px-10 rounded-2xl bg-slate-900 text-white font-black text-xs uppercase tracking-widest shadow-2xl shadow-slate-200 group">
+                    {isProcessing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Executing...</> : <><Play className="w-4 h-4 mr-3" /> Initialize Signal Audit</>}
                   </Button>
                 )}
               </div>
@@ -230,13 +231,13 @@ const Dashboard = () => {
           </Card>
 
           {/* Results Refinement Port */}
-          <div className="space-y-6">
+          <div className="page-section gap-[var(--space-md)]">
             <div className="flex items-center justify-between px-2">
               <h2 className="text-xs font-bold uppercase tracking-[0.3em] text-slate-400">Stream Refinement</h2>
               <Badge variant="secondary" className="font-bold text-[9px] tracking-tighter uppercase px-2 h-5 bg-slate-100">{detectionResults.length} FOUND</Badge>
             </div>
 
-            <Card className="p-8 rounded-[40px] border border-slate-200/50 bg-white space-y-8">
+            <Card className="adaptive-card bg-white space-y-6">
               <div className="space-y-3">
                 <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 ml-1">Filter Context</Label>
                 <Select value={filterAction} onValueChange={setFilterAction}>
@@ -250,12 +251,17 @@ const Dashboard = () => {
                 </Select>
               </div>
 
-              <div className="p-6 rounded-[32px] bg-primary/5 border border-primary/10 space-y-4">
+              <div className="p-[var(--space-md)] rounded-[var(--radius-lg)] bg-primary/5 border border-primary/10 space-y-4">
                 <div className="flex items-center justify-between">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-primary">Portfolio Delta</div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-primary">Credit Delta</div>
                   <Activity className="w-3.5 h-3.5 text-primary opacity-40" />
                 </div>
-                <div className="text-3xl font-black tracking-tighter text-slate-900">+{sessionStats.totalCredits} XP</div>
+                <div className={cn(
+                  "text-3xl font-black tracking-tighter",
+                  sessionStats.totalCredits >= 0 ? "text-slate-900" : "text-destructive"
+                )}>
+                  {sessionStats.totalCredits >= 0 ? "+" : ""}{sessionStats.totalCredits.toFixed(2)} Credits
+                </div>
                 <Button variant="ghost" className="w-full h-10 font-black text-[9px] uppercase tracking-widest text-primary hover:bg-primary/10" onClick={() => navigate("/wallet")}>
                   View Ledger Details <ChevronRight className="w-3.5 h-3.5 ml-1" />
                 </Button>
@@ -268,16 +274,16 @@ const Dashboard = () => {
         {detectionResults.length > 0 && (
           <div className="pt-8 space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
             <div className="flex items-center justify-between px-2">
-              <h2 className="text-sm font-black tracking-tighter text-slate-900 uppercase">Live Audit Stream</h2>
+              <h2 className="text-sm font-black tracking-tighter text-slate-900 uppercase">Live Signal Stream</h2>
               <Button variant="ghost" size="sm" onClick={() => navigate("/events")} className="font-bold text-[10px] uppercase tracking-widest text-slate-400 hover:text-primary">
-                Archive History →
+                Audit History →
               </Button>
             </div>
             <DetectionViewer results={detectionResults.filter(r => filterAction === "all" || r.action === filterAction)} />
           </div>
         )}
       </div>
-    </DashboardLayout>
+    </DashboardLayout >
   );
 };
 

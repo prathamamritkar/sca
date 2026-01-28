@@ -3,6 +3,7 @@ from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from pathlib import Path
 import os
+import numpy as np
 from cv_processor import CVProcessor
 import json
 from datetime import datetime, timedelta
@@ -16,20 +17,32 @@ from jwt_auth import (
 )
 from blockchain import BlockchainManager
 from flask import send_from_directory
+from config import config
+
+from flask.json.provider import DefaultJSONProvider
+
+class NumpyJSONProvider(DefaultJSONProvider):
+    """ Custom JSON provider for numpy data types compatible with Flask 3.x """
+    def default(self, obj):
+        if isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
+                            np.int16, np.int32, np.int64, np.uint8,
+                            np.uint16, np.uint32, np.uint64)):
+            return int(obj)
+        elif isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
+            return float(obj)
+        elif isinstance(obj, (np.ndarray,)):
+            return obj.tolist()
+        elif isinstance(obj, (np.bool_)):
+            return bool(obj)
+        return super().default(obj)
 
 app = Flask(__name__)
+app.json = NumpyJSONProvider(app)
 
-# Enable CORS for frontend integration
-CORS(app, origins=[
-    'http://localhost:5173',    # Vite dev server
-    'http://localhost:8080',    # Alternative Vite port
-    'http://localhost:3000',    # Alternative dev server
-    'http://127.0.0.1:5173',
-    'http://127.0.0.1:8080',
-    'http://127.0.0.1:3000',
-], supports_credentials=True)
+# Enable CORS with environment-based origins
+CORS(app, origins=config.CORS_ORIGINS, supports_credentials=True)
 
-# Configuration
+# Configuration from environment
 UPLOAD_FOLDER = Path('uploads')
 OUTPUT_FOLDER = Path('outputs')
 MODELS_FOLDER = Path('models')
@@ -124,13 +137,40 @@ def index():
 
 @app.route('/status', methods=['GET'])
 def status():
-    """Get API status"""
-    return jsonify({
-        'status': 'running',
-        'timestamp': datetime.now().isoformat(),
-        'uploads_count': len(list(UPLOAD_FOLDER.glob('*'))),
-        'outputs_count': len(list(OUTPUT_FOLDER.glob('*.json')))
-    })
+    """Get API status with node health metrics"""
+    try:
+        # Check database connectivity
+        session = db.get_session()
+        try:
+            session.execute(text('SELECT 1'))
+            db_status = 'operational'
+        except:
+            db_status = 'degraded'
+        finally:
+            session.close()
+        
+        # Check blockchain connectivity
+        blockchain_status = 'operational' if blockchain_manager and blockchain_manager.w3.is_connected() else 'offline'
+        
+        # Overall node status
+        overall_status = 'operational' if db_status == 'operational' else 'degraded'
+        
+        return jsonify({
+            'status': overall_status,
+            'timestamp': datetime.now().isoformat(),
+            'uploads_count': len(list(UPLOAD_FOLDER.glob('*'))),
+            'outputs_count': len(list(OUTPUT_FOLDER.glob('*.json'))),
+            'database_status': db_status,
+            'blockchain_status': blockchain_status,
+            'node_id': 'SCA_NODE_1',
+            'version': '2.0'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
 
 
 @app.route('/contact', methods=['POST'])
@@ -147,15 +187,47 @@ def contact():
     if not name or not email or not message:
         return jsonify({'error': 'Name, email, and message are required'}), 400
     
-    # In a real app, you would send an email or save to a database
-    print(f"Contact Inquiry Received: From={name}, Email={email}")
-    print(f"Message: {message[:100]}...")
+    # Validate email format (basic check)
+    if '@' not in email or '.' not in email:
+        return jsonify({'error': 'Invalid email format'}), 400
     
-    return jsonify({
-        'success': True,
-        'message': 'Signal received and cached by node admins.',
-        'received_at': datetime.now().isoformat()
-    })
+    # Save to database
+    session = db.get_session()
+    try:
+        from database import ContactInquiry
+        
+        # Get client IP and user agent for tracking
+        ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
+        user_agent = request.headers.get('User-Agent', '')[:500]  # Limit length
+        
+        inquiry = ContactInquiry(
+            name=name,
+            email=email,
+            message=message,
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+        
+        session.add(inquiry)
+        session.commit()
+        session.refresh(inquiry)
+        
+        print(f"✓ Contact Inquiry #{inquiry.inquiry_id} saved: From={name}, Email={email}")
+        print(f"  Message preview: {message[:100]}...")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Signal received and cached by node admins.',
+            'received_at': datetime.now().isoformat(),
+            'inquiry_id': inquiry.inquiry_id
+        })
+    except Exception as e:
+        session.rollback()
+        print(f"✗ Failed to save contact inquiry: {e}")
+        return jsonify({'error': 'Failed to save inquiry', 'details': str(e)}), 500
+    finally:
+        session.close()
+
 
 
 @app.route('/auth/login', methods=['POST'])
@@ -474,6 +546,12 @@ def upload_video():
         return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
 
+@app.route('/uploads/<path:filename>')
+def uploaded_file(filename):
+    """Serve uploaded video files"""
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
 @app.route('/process', methods=['POST'])
 @jwt_required
 def process_video():
@@ -642,7 +720,7 @@ def get_summary(filename):
 @app.route('/db/events', methods=['GET'])
 @jwt_required
 def get_db_events():
-    """Get all events from database with pagination"""
+    """Get all events from database with pagination and aggregated stats"""
     limit = request.args.get('limit', 100, type=int)
     offset = request.args.get('offset', 0, type=int)
     person_id = request.args.get('person_id', None)
@@ -653,6 +731,7 @@ def get_db_events():
     
     session = db.get_session()
     try:
+        from sqlalchemy import func
         query = session.query(Event)
         
         if person_id:
@@ -671,9 +750,12 @@ def get_db_events():
                 (Event.department.ilike(search_query))
             )
         
-        query = query.order_by(Event.timestamp.desc())
-        
+        # Calculate totals before pagination
         total = query.count()
+        total_credits = session.query(func.sum(Event.blockchain_credits)).filter(Event.event_id.in_(query.with_entities(Event.event_id))).scalar() or 0
+        total_impact = session.query(func.sum(Event.energy_saved_estimate)).filter(Event.event_id.in_(query.with_entities(Event.event_id))).scalar() or 0
+        
+        query = query.order_by(Event.timestamp.desc())
         events = query.offset(offset).limit(limit).all()
         
         # Expunge objects to prevent DetachedInstanceError
@@ -682,6 +764,8 @@ def get_db_events():
         
         return jsonify({
             'total': total,
+            'total_credits': float(total_credits),
+            'total_impact': float(total_impact),
             'limit': limit,
             'offset': offset,
             'events': [event.to_dict() for event in events]
@@ -715,7 +799,7 @@ def get_db_event(event_id):
 @jwt_required
 @role_required('admin', 'faculty')
 def update_event_status(event_id):
-    """Update event verification status"""
+    """Update event verification status and trigger blockchain minting if verified"""
     data = request.get_json()
     if not data or 'status' not in data:
         return jsonify({'error': 'status required'}), 400
@@ -729,6 +813,29 @@ def update_event_status(event_id):
         event = session.query(Event).filter_by(event_id=event_id).first()
         if not event:
             return jsonify({'error': 'Event not found'}), 404
+        
+        # If transitioning to verified, trigger blockchain minting
+        if new_status == 'verified' and event.status != 'verified':
+            if event.action_type == 'sustainable' and event.blockchain_credits > 0:
+                if blockchain_manager:
+                    # Get person's wallet or fallback to pseudo-wallet
+                    person = session.query(Person).filter_by(person_id=event.person_id).first()
+                    wallet = person.wallet_address if person else None
+                    
+                    if not wallet:
+                        import hashlib
+                        wallet = f"0x{hashlib.sha256((event.person_id or 'unknown').encode()).hexdigest()[:40]}"
+                    
+                    try:
+                        tx_hash = blockchain_manager.mint_credits(
+                            target_address=wallet,
+                            amount=int(event.blockchain_credits),
+                            action_type=event.action_detected or 'Verified Action',
+                            room_id=event.room_id
+                        )
+                        print(f"✓ Blockchain Minting Successful: {tx_hash}")
+                    except Exception as be:
+                        print(f"⚠ Blockchain Minting Failed: {be}")
         
         event.status = new_status
         session.commit()
@@ -746,22 +853,47 @@ def update_event_status(event_id):
 @jwt_required
 @admin_required
 def bulk_verify_events():
-    """Bulk verify pending events with high confidence"""
+    """Bulk verify pending events with high confidence and trigger minting"""
     data = request.json or {}
     threshold = data.get('confidence_threshold', 0.8)
     
     session = db.get_session()
     try:
-        updated = session.query(Event).filter(
+        # Fetch events that meet the criteria
+        events_to_verify = session.query(Event).filter(
             Event.status == 'pending',
             Event.confidence >= threshold
-        ).update({"status": "verified"}, synchronize_session=False)
+        ).all()
+        
+        updated_count = 0
+        for event in events_to_verify:
+            # Trigger blockchain minting for sustainable actions
+            if event.action_type == 'sustainable' and event.blockchain_credits > 0:
+                if blockchain_manager:
+                    person = session.query(Person).filter_by(person_id=event.person_id).first()
+                    wallet = person.wallet_address if person else None
+                    if not wallet:
+                        import hashlib
+                        wallet = f"0x{hashlib.sha256((event.person_id or 'unknown').encode()).hexdigest()[:40]}"
+                    
+                    try:
+                        blockchain_manager.mint_credits(
+                            target_address=wallet,
+                            amount=int(event.blockchain_credits),
+                            action_type=event.action_detected or 'Bulk Verified Action',
+                            room_id=event.room_id
+                        )
+                    except Exception as be:
+                        print(f"⚠ Bulk Blockchain Minting Failed for event {event.event_id}: {be}")
+            
+            event.status = 'verified'
+            updated_count += 1
         
         session.commit()
         return jsonify({
             'success': True,
-            'message': f'Successfully verified {updated} high-confidence events',
-            'updated_count': updated
+            'message': f'Successfully verified {updated_count} high-confidence events',
+            'updated_count': updated_count
         })
     except Exception as e:
         session.rollback()
@@ -1001,10 +1133,15 @@ def get_db_stats():
     """Get database statistics - optimized with selective column loading"""
     session = db.get_session()
     try:
+        from sqlalchemy import func
         # Use count() instead of loading all objects
         total_persons = session.query(Person).count()
         total_events = session.query(Event).count()
         total_activities = session.query(PersonActivity).count()
+        
+        # Calculate aggregates
+        total_credits = session.query(func.sum(Event.blockchain_credits)).scalar() or 0
+        total_energy_saved = session.query(func.sum(Event.energy_saved_estimate)).scalar() or 0
         
         # Recent activity - load only necessary columns
         recent_events = session.query(Event).order_by(Event.timestamp.desc()).limit(5).all()
@@ -1017,6 +1154,8 @@ def get_db_stats():
             'total_persons': total_persons,
             'total_events': total_events,
             'total_activities': total_activities,
+            'total_credits': float(total_credits),
+            'total_energy_saved': float(total_energy_saved),
             'recent_events': [event.to_dict() for event in recent_events]
         })
     except Exception as e:
@@ -1041,52 +1180,6 @@ def get_admin_stats_endpoint():
 # ENERGY ANALYTICS ENDPOINTS
 # ============================================================
 
-@app.route('/energy/report', methods=['GET'])
-@jwt_required
-def get_energy_report():
-    """
-    Get comprehensive energy usage report
-    
-    Query params:
-        hours: Time period in hours (default: 24)
-        room_id: Filter by room (optional)
-    """
-    session = db.get_session()
-    try:
-        hours = request.args.get('hours', 24, type=int)
-        room_id = request.args.get('room_id', None)
-        
-        from database import Event
-        
-        # Get events from specified time period
-        time_threshold = datetime.now() - timedelta(hours=hours)
-        query = session.query(Event).filter(Event.timestamp >= time_threshold)
-        
-        if room_id:
-            query = query.filter_by(room_id=room_id)
-        
-        events = query.all()
-        
-        # Expunge objects to prevent DetachedInstanceError
-        for event in events:
-            session.expunge(event)
-        
-        # Convert to dict for analysis
-        event_dicts = [e.to_dict() for e in events]
-        
-        # Generate report
-        report = energy_analyzer.generate_energy_report(event_dicts, time_period_hours=hours)
-        
-        # Add room-specific data
-        report['room_id'] = room_id or 'ALL'
-        report['events_analyzed'] = len(events)
-        
-        return jsonify(report)
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    finally:
-        session.close()
 
 
 @app.route('/energy/blockchain-credits', methods=['GET'])
@@ -1149,7 +1242,8 @@ def get_blockchain_credits():
             'total_energy_saved_watts': round(float(total_energy_saved), 2),
             'credits_per_kwh': energy_analyzer.CREDIT_RATE_PER_KWH,
             'top_earners': top_earners_list,
-            'projected_annual_value': round(float(total_credits) * (8760 / hours), 2)
+            'projected_annual_value': round(float(total_credits) * (8760 / hours), 2),
+            'blockchain_status': blockchain_manager.is_connected if blockchain_manager else False
         }
         
         if person_id:
@@ -1191,6 +1285,9 @@ def transfer_credits():
     if not all([sender_id, recipient_id, amount]):
         return jsonify({'error': 'Missing required fields'}), 400
         
+    if sender_id == recipient_id:
+        return jsonify({'error': 'Self-transfer prohibited. Assets must be routed to external nodes.'}), 400
+        
     try:
         amount = float(amount)
         if amount <= 0:
@@ -1200,7 +1297,19 @@ def transfer_credits():
         
     session = db.get_session()
     try:
-        # Get or create sender/recipient in Person table
+        # 1. Validate Recipient First
+        recipient = session.query(Person).filter_by(person_id=recipient_id).first()
+        if not recipient:
+            user_exists = session.query(User).filter_by(email=recipient_id).first()
+            is_eth_address = recipient_id.startswith('0x') and len(recipient_id) == 42
+            if not user_exists and not is_eth_address:
+                return jsonify({'error': 'Recipient not recognized. Please provide a valid decentralised ID or 0x wallet address.'}), 404
+                
+            recipient = Person(person_id=recipient_id, total_credits_earned=0)
+            session.add(recipient)
+            session.flush()
+
+        # 2. Get or create sender and check balance
         sender = session.query(Person).filter_by(person_id=sender_id).first()
         if not sender:
             # Check if sender has earned any credits from events if no Person record exists
@@ -1210,44 +1319,11 @@ def transfer_credits():
             session.flush()
             
         if sender.total_credits_earned < amount:
-            return jsonify({'error': 'Insufficient balance'}), 400
-            
-        recipient = session.query(Person).filter_by(person_id=recipient_id).first()
-        if not recipient:
-            # Check if recipient exists in User table to validate ID
-            user_exists = session.query(User).filter_by(email=recipient_id).first()
-            recipient = Person(person_id=recipient_id, total_credits_earned=0)
-            session.add(recipient)
-            session.flush()
+            return jsonify({'error': 'Insufficient balance. Process more energy events to earn XP.'}), 400
             
         # Perform transfer
         sender.total_credits_earned -= amount
         recipient.total_credits_earned += amount
-        
-        # Record activities
-        from database import PersonActivity
-        
-        # Debit log
-        debit = PersonActivity(
-            person_id=sender_id,
-            activity_type='disbursement',
-            incentive_points=-int(amount),
-            incentive_reason=f'Transfer to {recipient_id}',
-            details={'recipient': recipient_id, 'tx_type': 'out'}
-        )
-        
-        # Credit log
-        credit = PersonActivity(
-            person_id=recipient_id,
-            activity_type='transfer_receipt',
-            incentive_points=int(amount),
-            incentive_reason=f'Transfer from {sender_id}',
-            details={'sender': sender_id, 'tx_type': 'in'}
-        )
-        
-        session.add(debit)
-        session.add(credit)
-        session.commit()
         
         # 🔗 Attempt Actual Blockchain Transfer if wallets are linked
         blockchain_tx = None
@@ -1259,12 +1335,38 @@ def transfer_credits():
         
         # Generate a pseudo-hash for the UI if blockchain failed or not present
         import hashlib
-        tx_hash = blockchain_tx if blockchain_tx else hashlib.sha256(f"{sender_id}{recipient_id}{amount}{datetime.now()}".encode()).hexdigest()
+        tx_hash_val = blockchain_tx if blockchain_tx else hashlib.sha256(f"{sender_id}{recipient_id}{amount}{datetime.now()}".encode()).hexdigest()
+        full_tx_hash = f"0x{tx_hash_val if blockchain_tx else tx_hash_val[:40]}"
+
+        # Record activities
+        from database import PersonActivity
+        
+        # Debit log
+        debit = PersonActivity(
+            person_id=sender_id,
+            activity_type='disbursement',
+            incentive_points=-float(amount),
+            incentive_reason=f'Transfer to {recipient_id}',
+            details={'recipient': recipient_id, 'tx_type': 'out', 'tx_hash': full_tx_hash}
+        )
+        
+        # Credit log
+        credit = PersonActivity(
+            person_id=recipient_id,
+            activity_type='transfer_receipt',
+            incentive_points=float(amount),
+            incentive_reason=f'Transfer from {sender_id}',
+            details={'sender': sender_id, 'tx_type': 'in', 'tx_hash': full_tx_hash}
+        )
+        
+        session.add(debit)
+        session.add(credit)
+        session.commit()
         
         return jsonify({
             'success': True,
             'message': 'Transfer successful',
-            'transaction_hash': f"0x{tx_hash if blockchain_tx else tx_hash[:40]}",
+            'transaction_hash': full_tx_hash,
             'blockchain_verified': bool(blockchain_tx),
             'amount': amount
         })
@@ -1473,9 +1575,21 @@ if __name__ == '__main__':
     print("=" * 50)
     print("SCA CV Module API Server")
     print("=" * 50)
-    print(f"Upload folder: {UPLOAD_FOLDER.absolute()}")
+    
+    # Validate configuration
+    if not config.validate():
+        print("\n⚠️  WARNING: Configuration validation failed!")
+        print("   Review the errors above before proceeding.\n")
+    
+    # Display configuration info
+    import json
+    print("\nEnvironment Configuration:")
+    print(json.dumps(config.get_info(), indent=2))
+    
+    print(f"\nUpload folder: {UPLOAD_FOLDER.absolute()}")
     print(f"Output folder: {OUTPUT_FOLDER.absolute()}")
     print(f"Models folder: {MODELS_FOLDER.absolute()}")
     print("=" * 50)
     
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Use config for Flask debug mode
+    app.run(debug=config.FLASK_DEBUG, host='0.0.0.0', port=5000)

@@ -27,6 +27,7 @@ export interface DetectionEvent {
     recognized_persons?: RecognizedPerson[];
     video_file?: string | null;
     person_id?: string | null;
+    status?: string;
 }
 
 export interface DeviceInfo {
@@ -99,6 +100,7 @@ export interface BlockchainCredits {
     credits_by_department: Record<string, number>;
     recent_transactions: CreditTransaction[];
     recent_history?: any[];
+    blockchain_status?: boolean;
 }
 
 export interface CreditTransaction {
@@ -115,7 +117,8 @@ export interface DatabaseStats {
     total_activities: number;
     sustainable_events: number;
     unsustainable_events: number;
-    total_credits_distributed: number;
+    total_credits: number;
+    total_energy_saved: number;
 }
 
 export interface ProcessingResult {
@@ -136,6 +139,7 @@ interface ApiResponse<T> {
     data: T | null;
     error: string | null;
     success: boolean;
+    status: number;
 }
 
 /**
@@ -160,16 +164,18 @@ async function apiRequest<T>(
                 data: null,
                 error: errorData.error || `HTTP ${response.status}: ${response.statusText}`,
                 success: false,
+                status: response.status,
             };
         }
 
         const data = await response.json();
-        return { data, error: null, success: true };
+        return { data, error: null, success: true, status: response.status };
     } catch (error) {
         return {
             data: null,
             error: error instanceof Error ? error.message : 'Network error',
             success: false,
+            status: 0,
         };
     }
 }
@@ -194,7 +200,7 @@ async function authenticatedApiRequest<T>(
     });
 
     // If 401 Unauthorized, try to refresh token
-    if (!response.success && response.error?.includes('401')) {
+    if (!response.success && response.status === 401) {
         const refreshToken = authStore.tokens.refreshToken;
 
         if (refreshToken) {
@@ -212,8 +218,8 @@ async function authenticatedApiRequest<T>(
                 return apiRequest<T>(endpoint, {
                     ...options,
                     headers: {
-                        'Authorization': `Bearer ${newAccessToken}`,
                         ...options.headers,
+                        'Authorization': `Bearer ${newAccessToken}`,
                     },
                 });
             } else {
@@ -253,13 +259,13 @@ export async function uploadVideo(file: File): Promise<ApiResponse<{ filename: s
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            return { data: null, error: errorData.error || 'Upload failed', success: false };
+            return { data: null, error: errorData.error || 'Upload failed', success: false, status: response.status };
         }
 
         const data = await response.json();
-        return { data, error: null, success: true };
+        return { data, error: null, success: true, status: response.status };
     } catch (error) {
-        return { data: null, error: error instanceof Error ? error.message : 'Upload error', success: false };
+        return { data: null, error: error instanceof Error ? error.message : 'Upload error', success: false, status: 0 };
     }
 }
 
@@ -270,7 +276,7 @@ export async function processVideo(
     filename: string,
     confidence: number = 0.5
 ): Promise<ApiResponse<ProcessingResult>> {
-    const response = await apiRequest<{ message: string; results: any }>('/process', {
+    const response = await authenticatedApiRequest<{ message: string; results: any }>('/process', {
         method: 'POST',
         body: JSON.stringify({ filename, confidence }),
     });
@@ -281,6 +287,7 @@ export async function processVideo(
             success: true,
             error: null,
             data: response.data.results as ProcessingResult,
+            status: response.status
         };
     }
 
@@ -288,6 +295,7 @@ export async function processVideo(
         success: false,
         error: response.error,
         data: null,
+        status: response.status
     };
 }
 
@@ -314,7 +322,8 @@ export async function getEvents(params?: {
     department?: string;
     status?: string;
     search?: string;
-}): Promise<ApiResponse<{ events: DetectionEvent[]; total: number }>> {
+    person_id?: string;
+}): Promise<ApiResponse<{ events: DetectionEvent[]; total: number; total_credits?: number; total_impact?: number }>> {
     const searchParams = new URLSearchParams();
     if (params?.limit) searchParams.set('limit', String(params.limit));
     if (params?.offset) searchParams.set('offset', String(params.offset));
@@ -324,6 +333,7 @@ export async function getEvents(params?: {
     if (params?.department) searchParams.set('department', params.department);
     if (params?.status) searchParams.set('status', params.status);
     if (params?.search) searchParams.set('search', params.search);
+    if (params?.person_id) searchParams.set('person_id', params.person_id);
 
     const query = searchParams.toString();
     return authenticatedApiRequest<{ events: DetectionEvent[]; total: number }>(
@@ -508,7 +518,7 @@ export async function getApiInfo(): Promise<ApiResponse<{
     version: string;
     endpoints: string[];
 }>> {
-    return apiRequest('/');
+    return authenticatedApiRequest('/');
 }
 
 /**

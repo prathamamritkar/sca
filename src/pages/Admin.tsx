@@ -27,7 +27,11 @@ import {
   Calendar,
   Shield,
   ToggleLeft,
-  ToggleRight
+  ToggleRight,
+  Zap,
+  Copy,
+  Check,
+  Fingerprint
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useToast } from "@/hooks/use-toast";
@@ -91,29 +95,46 @@ const Admin = () => {
   const { useMockData } = useAuthStore();
   const { toast } = useToast();
 
-  const loadMockData = useCallback(() => {
-    const mockEvents: PendingAction[] = [
-      { id: 101, action: "light_off", location: "Lab 3", timestamp: new Date().toISOString(), confidence: 0.72 },
-      { id: 102, action: "fan_off", location: "Library", timestamp: new Date().toISOString(), confidence: 0.88 },
-      { id: 103, action: "ac_off", location: "Conf. Room", timestamp: new Date().toISOString(), confidence: 0.81 },
-    ];
-    setPendingActions(mockEvents);
-
-    const mockUsers: UserRecord[] = [
-      { user_id: 1, email: "admin@sca.campus", name: "System Admin", role: "admin", department: "IT", is_active: true, created_at: new Date().toISOString() },
-      { user_id: 2, email: "john@student.com", name: "John Doe", role: "student", department: "CS", is_active: true, created_at: new Date().toISOString() },
-    ];
-    setUsers(mockUsers);
-    setIsLoading(false);
+  // Helper to persist mock state
+  const saveMockState = useCallback((actions: PendingAction[], userList: UserRecord[]) => {
+    localStorage.setItem('sca_mock_actions', JSON.stringify(actions));
+    localStorage.setItem('sca_mock_users', JSON.stringify(userList));
   }, []);
+
+  const loadMockData = useCallback(() => {
+    const savedActions = localStorage.getItem('sca_mock_actions');
+    const savedUsers = localStorage.getItem('sca_mock_users');
+
+    if (savedActions && savedUsers) {
+      setPendingActions(JSON.parse(savedActions));
+      setUsers(JSON.parse(savedUsers));
+    } else {
+      const mockEvents: PendingAction[] = [
+        { id: 101, action: "light_off", location: "Lab 3", timestamp: new Date().toISOString(), confidence: 0.72 },
+        { id: 102, action: "fan_off", location: "Library", timestamp: new Date(Date.now() - 3600000).toISOString(), confidence: 0.88 },
+        { id: 103, action: "ac_off", location: "Conf. Room", timestamp: new Date(Date.now() - 7200000).toISOString(), confidence: 0.81 },
+        { id: 104, action: "suspicious_energy", location: "Gym", timestamp: new Date(Date.now() - 10800000).toISOString(), confidence: 0.45 },
+        { id: 105, action: "unauthorized_entry", location: "Admin Block", timestamp: new Date(Date.now() - 14400000).toISOString(), confidence: 0.92 },
+      ];
+      const mockUsers: UserRecord[] = [
+        { user_id: 1, email: "admin@sca.campus", name: "System Admin", role: "admin", department: "IT", is_active: true, created_at: new Date().toISOString() },
+        { user_id: 2, email: "john@student.com", name: "John Doe", role: "student", department: "CS", is_active: true, created_at: new Date().toISOString() },
+        { user_id: 3, email: "dr.rao@faculty.com", name: "Dr. Rao", role: "faculty", department: "Physics", is_active: true, created_at: new Date().toISOString() },
+      ];
+      setPendingActions(mockEvents);
+      setUsers(mockUsers);
+      saveMockState(mockEvents, mockUsers);
+    }
+    setIsLoading(false);
+  }, [saveMockState]);
 
   const loadPendingActions = useCallback(async () => {
     if (useMockData) { loadMockData(); return; }
     setIsLoading(true);
     try {
-      const result = await cvApi.getEvents({ status: 'pending', limit: 50 });
+      const result = await cvApi.getEvents({ status: 'pending', limit: 100 });
       if (result.success && result.data) {
-        setPendingActions(result.data.events.map(e => ({
+        setPendingActions((result.data.events || []).map(e => ({
           id: e.event_id,
           action: e.action_detected || e.action_type || 'unknown',
           location: e.room_id || 'Unknown',
@@ -123,7 +144,7 @@ const Admin = () => {
         })));
       }
     } catch (error) {
-      toast({ title: "Node Timeout", description: "Failed to connect to governance bridge. Reverting to sandbox.", variant: "destructive" });
+      toast({ title: "Operator Link Timeout", description: "Defaulting to high-availability sandbox mode.", variant: "default" });
       loadMockData();
     } finally {
       setIsLoading(false);
@@ -136,7 +157,7 @@ const Admin = () => {
     try {
       const result = await cvApi.getUsers();
       if (result.success && result.data) {
-        setUsers(result.data.users);
+        setUsers(result.data.users || []);
       }
     } catch (error) {
       console.error("Failed to load users", error);
@@ -151,11 +172,11 @@ const Admin = () => {
       const result = await cvApi.getAdminStats();
       if (result.success && result.data) {
         setGlobalStats({
-          pending_count: result.data.pending_count ?? 0,
-          hc_count: result.data.hc_count ?? 0,
-          avg_accuracy: result.data.avg_accuracy ?? 0,
-          total_verified: result.data.total_verified ?? 0,
-          db_size_kb: result.data.db_size_kb ?? 0
+          pending_count: result.data.pending_count || 0,
+          hc_count: result.data.hc_count || 0,
+          avg_accuracy: result.data.avg_accuracy || 0,
+          total_verified: result.data.total_verified || 0,
+          db_size_kb: result.data.db_size_kb || 0
         });
       }
     } catch (e) { }
@@ -177,10 +198,14 @@ const Admin = () => {
         const result = await cvApi.updateEventStatus(id, status);
         if (!result.success) throw new Error(result.error || 'Failed to update status');
       }
-      setPendingActions(prev => prev.filter(a => a.id !== id));
+
+      const newActions = pendingActions.filter(a => a.id !== id);
+      setPendingActions(newActions);
+      if (useMockData) saveMockState(newActions, users);
+
       loadGlobalStats();
       toast({
-        title: status === 'verified' ? "Record Confirmed" : "Record Expunged",
+        title: status === 'verified' ? "Signal Confirmed" : "Signal Expunged",
         description: `Transaction ID #${id} updated on ledger.`
       });
     } catch (error: any) {
@@ -191,9 +216,11 @@ const Admin = () => {
   };
 
   const handleBulkApprove = async () => {
-    const hcCount = pendingActions.filter(a => a.confidence >= 0.8).length;
+    const hcCandidates = pendingActions.filter(a => a.confidence >= 0.8);
+    const hcCount = hcCandidates.length;
+
     if (hcCount === 0) {
-      toast({ title: "No HC Candidates", description: "No pending actions meet the 0.8 confidence threshold." });
+      toast({ title: "No HC Candidates", description: "No pending signals meet the 0.8 fidelity threshold." });
       return;
     }
 
@@ -203,11 +230,15 @@ const Admin = () => {
         const result = await cvApi.bulkVerifyEvents(0.8);
         if (!result.success) throw new Error(result.error || 'Bulk verification failed');
       }
-      setPendingActions(prev => prev.filter(a => a.confidence < 0.8));
+
+      const newActions = pendingActions.filter(a => a.confidence < 0.8);
+      setPendingActions(newActions);
+      if (useMockData) saveMockState(newActions, users);
+
       loadGlobalStats();
       toast({
         title: "Bulk Approval Executed",
-        description: `Successfully verified all high-confidence actions (${hcCount} records).`
+        description: `Successfully verified all high-fidelity signals (${hcCount} records).`
       });
     } catch (error: any) {
       toast({ title: "Bulk Audit Failure", description: error.message, variant: "destructive" });
@@ -227,7 +258,10 @@ const Admin = () => {
         if (!result.success) throw new Error(result.error || 'Failed to update user');
       }
 
-      setUsers(prev => prev.map(u => u.user_id === userId ? { ...u, ...updates } : u));
+      const newUsers = users.map(u => u.user_id === userId ? { ...u, ...updates } : u);
+      setUsers(newUsers);
+      if (useMockData) saveMockState(pendingActions, newUsers);
+
       toast({
         title: "User Profile Synced",
         description: `Permissions for node operator #${userId} updated.`
@@ -254,42 +288,46 @@ const Admin = () => {
 
   const filteredActions = useMemo(() => {
     if (!searchQuery) return pendingActions;
+    const q = searchQuery.toLowerCase();
     return pendingActions.filter(a =>
-      a.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.id.toString().includes(searchQuery)
+      a.action.toLowerCase().includes(q) ||
+      a.location.toLowerCase().includes(q) ||
+      a.id.toString().includes(q)
     );
   }, [pendingActions, searchQuery]);
 
   const filteredUsers = useMemo(() => {
     if (!searchQuery) return users;
+    const q = searchQuery.toLowerCase();
     return users.filter(u =>
-      u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.department.toLowerCase().includes(searchQuery.toLowerCase())
+      u.name.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q) ||
+      (u.department && u.department.toLowerCase().includes(q))
     );
   }, [users, searchQuery]);
 
   const stats = useMemo(() => ({
-    inQueue: pendingActions.length,
-    highConfidence: pendingActions.filter(a => a.confidence >= 0.8).length,
-    avgConfidence: pendingActions.length > 0 ? Math.round(pendingActions.reduce((s, a) => s + a.confidence, 0) / pendingActions.length * 100) : 0
+    inQueue: pendingActions.length || 0,
+    highConfidence: pendingActions.filter(a => a.confidence >= 0.8).length || 0,
+    avgConfidence: pendingActions.length > 0
+      ? (pendingActions.reduce((s, a) => s + (a.confidence || 0), 0) / pendingActions.length * 100).toFixed(2)
+      : "0.00"
   }), [pendingActions]);
 
   return (
     <DashboardLayout>
-      <div className="space-y-12">
+      <div className="page-section">
         {/* SOC-Themed Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8 pb-6 border-b border-slate-100">
-          <div className="space-y-2">
+        <div className="section-header md:flex-row md:items-center md:justify-between">
+          <div className="space-y-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center border border-slate-700">
-                <ShieldCheck className="w-5 h-5 text-primary" />
+              <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center border border-slate-700 shadow-2xl shadow-slate-200">
+                <Shield className="w-5 h-5 text-primary" />
               </div>
-              <h1 className="text-4xl font-black tracking-tighter text-slate-900 uppercase">Admin Center</h1>
+              <h1 className="text-4xl font-black tracking-tighter text-slate-900 uppercase">Governance</h1>
             </div>
             <p className="text-slate-500 font-medium max-w-2xl text-sm leading-relaxed">
-              System governance for {activeTab === 'audit' ? 'audit verification' : 'operator management'}. Review and maintain network integrity.
+              System governance for {activeTab === 'audit' ? 'audit verification' : 'operator management'}. Review and maintain governance integrity.
             </p>
           </div>
 
@@ -299,7 +337,7 @@ const Admin = () => {
                 onClick={() => { setActiveTab('audit'); setSearchQuery(""); }}
                 className={cn("px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", activeTab === 'audit' ? "bg-white shadow-sm text-slate-900" : "text-slate-400 hover:text-slate-600")}
               >
-                Audits
+                Audit Queue
               </button>
               <button
                 onClick={() => { setActiveTab('users'); setSearchQuery(""); }}
@@ -329,17 +367,19 @@ const Admin = () => {
           </div>
         </div>
 
-        {/* Governance Metrics */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* System Governance */}
+        <div className="stat-grid">
           {[
-            { label: "Pending Audit", value: useMockData ? stats.inQueue : globalStats.pending_count, icon: <Clock className="w-4 h-4" />, color: "text-slate-900" },
-            { label: "HC Reliability", value: useMockData ? stats.highConfidence : globalStats.hc_count, icon: <UserCheck className="w-4 h-4" />, color: "text-success" },
-            { label: "System Accuracy", value: `${useMockData ? stats.avgConfidence : globalStats.avg_accuracy}%`, icon: <Activity className="w-4 h-4" />, color: "text-primary" },
-            { label: "Database Size", value: `${globalStats.db_size_kb.toLocaleString()} KB`, icon: <Database className="w-4 h-4" />, color: "text-slate-900" }
+            { label: "Queue Depth", value: useMockData ? stats.inQueue : (globalStats.pending_count || 0), icon: <Clock className="w-4 h-4" />, color: "text-slate-900" },
+            { label: "HC Reliability", value: useMockData ? stats.highConfidence : (globalStats.hc_count || 0), icon: <UserCheck className="w-4 h-4" />, color: "text-success" },
+            { label: "Signal Fidelity", value: `${useMockData ? stats.avgConfidence : (globalStats.avg_accuracy || 0)}%`, icon: <Activity className="w-4 h-4" />, color: "text-primary" },
+            { label: "Ledger Volume", value: `${(globalStats.db_size_kb || 0).toLocaleString()} KB`, icon: <Database className="w-4 h-4" />, color: "text-slate-900" }
           ].map((stat, i) => (
-            <Card key={i} className="p-6 bg-slate-50/50 border-slate-200/50 rounded-[32px] group hover:border-slate-300 transition-all">
-              <div className="flex items-center justify-between mb-4 text-slate-400 group-hover:text-slate-600 transition-colors">
-                {stat.icon}
+            <Card key={i} className="p-5 bg-slate-50/50 border-slate-200/50 rounded-[32px] group hover:border-primary/20 transition-all">
+              <div className="flex items-center justify-between mb-4">
+                <div className="p-2 rounded-xl bg-white border border-slate-200/50 text-slate-400 group-hover:text-primary transition-colors">
+                  {stat.icon}
+                </div>
               </div>
               <div className="space-y-1">
                 <div className={cn("text-2xl font-black tracking-tighter", stat.color)}>{stat.value}</div>
@@ -349,11 +389,11 @@ const Admin = () => {
           ))}
         </div>
 
-        {/* Verification Hub */}
-        <div className="space-y-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between px-2 gap-4">
+        {/* Governance Hub */}
+        <div className="page-section gap-[var(--space-md)]">
+          <div className="section-header border-none pb-0 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400">
-              {activeTab === 'audit' ? <><Terminal className="w-4 h-4" /> Discrepancy Stream</> : <><Users className="w-4 h-4" /> Network Operators</>}
+              {activeTab === 'audit' ? <><Shield className="w-4 h-4" /> Audit Queue</> : <><Users className="w-4 h-4" /> Node Operators</>}
             </div>
 
             <div className="flex items-center gap-3">
@@ -371,31 +411,31 @@ const Admin = () => {
             </div>
           </div>
 
-          <div className="grid gap-4">
+          <div className="grid gap-3">
             {isLoading ? (
               <div className="py-20 text-center space-y-4">
                 <Loader2 className="w-10 h-10 animate-spin text-slate-200 mx-auto" />
-                <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Polling Network Nodes...</p>
+                <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Polling Node Operators...</p>
               </div>
             ) : activeTab === 'audit' ? (
               filteredActions.length === 0 ? (
                 <Card className="py-20 text-center border-dashed border-2 bg-slate-50/50 rounded-[40px]">
                   <CheckCircle2 className="w-12 h-12 text-success/20 mx-auto mb-4" />
-                  <h3 className="text-sm font-bold text-slate-900">{searchQuery ? "No matches found" : "Queue Fully Synchronized"}</h3>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mt-1">{searchQuery ? "Try refining your filter parameters." : "No deviations requiring manual intervention."}</p>
+                  <h3 className="text-sm font-bold text-slate-900">{searchQuery ? "No matches found" : "Audit Queue Synchronized"}</h3>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mt-1">{searchQuery ? "Try refining your filter parameters." : "No signals requiring manual audit."}</p>
                 </Card>
               ) : (
                 filteredActions.map((action) => (
-                  <Card key={action.id} className="p-6 rounded-[32px] border-slate-200/50 hover:border-primary/20 transition-all flex flex-col md:flex-row md:items-center justify-between gap-6 group overflow-hidden relative">
+                  <Card key={action.id} className="p-5 rounded-[32px] border-slate-200/50 hover:border-primary/20 transition-all flex flex-col md:flex-row md:items-center justify-between gap-6 group overflow-hidden relative">
                     <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-slate-100 group-hover:bg-primary/20 transition-colors" />
 
                     <div className="flex items-start gap-5 pl-2 flex-1">
                       <div className="w-14 h-14 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
-                        <Activity className="w-6 h-6 text-slate-400 group-hover:text-primary transition-colors" />
+                        <Zap className="w-6 h-6 text-slate-400 group-hover:text-primary transition-colors" />
                       </div>
                       <div className="space-y-1.5">
                         <div className="flex items-center gap-3 flex-wrap">
-                          <span className="text-base font-black tracking-tighter text-slate-900">{action.action.replace(/_/g, ' ').toUpperCase()}</span>
+                          <span className="text-base font-black tracking-tighter text-slate-900">{(action.action || 'UNKNOWN').replace(/_/g, ' ').toUpperCase()}</span>
                           <Badge className={cn(
                             "h-5 text-[9px] font-bold uppercase tracking-tighter",
                             action.confidence >= 0.8 ? "bg-success/10 text-success border-success/20" : "bg-warning/10 text-warning border-warning/20"
@@ -406,7 +446,7 @@ const Admin = () => {
                         <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-[11px] font-bold text-slate-500 uppercase tracking-widest opacity-60">
                           <span className="flex items-center gap-1.5">ID: #{action.id}</span>
                           <span className="flex items-center gap-1.5"><Clock className="w-3 h-3" /> {new Date(action.timestamp).toLocaleTimeString()}</span>
-                          <span className="flex items-center gap-1.5"><Eye className="w-3 h-3" /> Zone: {action.location}</span>
+                          <span className="flex items-center gap-1.5"><Eye className="w-3 h-3" /> Station: {action.location}</span>
                         </div>
                       </div>
                     </div>
@@ -437,8 +477,9 @@ const Admin = () => {
                   </Card>
                 ) : (
                   filteredUsers.map((user) => (
-                    <Card key={user.user_id} className="p-6 rounded-[32px] border-slate-200/50 hover:border-primary/20 transition-all flex flex-col md:flex-row md:items-center justify-between gap-6 group">
-                      <div className="flex items-center gap-5 flex-1">
+                    <Card key={user.user_id} className="p-6 rounded-[32px] border-slate-200/50 hover:border-primary/20 transition-all flex flex-col md:flex-row md:items-center justify-between gap-6 group overflow-hidden relative">
+                      <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-slate-100 group-hover:bg-primary/20 transition-colors" />
+                      <div className="flex items-center gap-5 flex-1 pl-2">
                         <div className="w-14 h-14 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 overflow-hidden relative">
                           {user.is_active ? <div className="absolute top-0 right-0 w-3 h-3 bg-success border-2 border-white rounded-full" /> : null}
                           <UserCheck className="w-6 h-6" />
@@ -453,9 +494,18 @@ const Admin = () => {
                               {user.role}
                             </Badge>
                           </div>
-                          <div className="flex flex-wrap items-center gap-x-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                          <div className="auto-scroll-row items-center gap-x-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
                             <span className="flex items-center gap-1.5"><Mail className="w-3 h-3" /> {user.email}</span>
                             <span className="flex items-center gap-1.5"><Calendar className="w-3 h-3" /> Joined {new Date(user.created_at).toLocaleDateString()}</span>
+                            <span className="flex items-center gap-1.5 group/handle cursor-pointer hover:text-primary transition-colors" onClick={(e) => {
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(user.email);
+                              toast({ title: "Node Handle Cached", description: `Identity signature for ${user.name} copied.` });
+                            }}>
+                              <Fingerprint className="w-3 h-3" />
+                              NODE_{user.email.split('@')[0].toUpperCase()}
+                              <Copy className="w-3 h-3 opacity-0 -ml-2 group-hover/handle:opacity-100 group-hover/handle:ml-0 transition-all duration-300" />
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -463,7 +513,7 @@ const Admin = () => {
                       <div className="flex items-center gap-4">
                         <div className="flex flex-col items-end mr-4">
                           <span className="text-[10px] font-black uppercase text-slate-300">{user.department || "No Dept"}</span>
-                          <span className="text-[9px] font-bold text-slate-400">Node ID: #{user.user_id}</span>
+                          <span className="text-[8px] font-bold text-success uppercase tracking-widest mt-1">NODE_VERIFIED</span>
                         </div>
 
                         <DropdownMenu>
@@ -488,7 +538,15 @@ const Admin = () => {
                             ))}
 
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem className={cn("p-3 rounded-xl cursor-pointer font-bold text-xs", user.is_active ? "text-destructive" : "text-success")} onClick={() => handleUpdateUser(user.user_id, { is_active: !user.is_active })}>
+                            <DropdownMenuItem
+                              className={cn(
+                                "p-3 rounded-xl cursor-pointer font-bold text-xs transition-colors",
+                                user.is_active
+                                  ? "text-destructive focus:bg-destructive/10 focus:text-destructive"
+                                  : "text-success focus:bg-success/10 focus:text-success"
+                              )}
+                              onClick={() => handleUpdateUser(user.user_id, { is_active: !user.is_active })}
+                            >
                               {user.is_active ? <ToggleLeft className="w-3.5 h-3.5 mr-2" /> : <ToggleRight className="w-3.5 h-3.5 mr-2" />}
                               {user.is_active ? "Suspend Node" : "Activate Node"}
                             </DropdownMenuItem>
@@ -506,68 +564,70 @@ const Admin = () => {
 
       {/* Visual Audit Modal */}
       <Dialog open={isVideoModalOpen} onOpenChange={setIsVideoModalOpen}>
-        <DialogContent className="max-w-2xl rounded-[40px] p-8 border-none overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-2 bg-slate-900" />
-          <DialogHeader className="mb-8">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
-                <Eye className="w-5 h-5 text-slate-900" />
+        <DialogContent className="fixed left-[50%] top-[50%] z-[200] w-[95vw] max-w-[42rem] translate-x-[-50%] translate-y-[-50%] bg-white rounded-[40px] shadow-3xl overflow-hidden focus:outline-none">
+          <div className="h-3 w-full bg-slate-900" />
+          <div className="p-8 md:p-12 overflow-y-auto max-h-[80vh] custom-scrollbar">
+            <DialogHeader className="mb-8">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
+                  <Eye className="w-5 h-5 text-slate-900" />
+                </div>
+                <DialogTitle className="text-2xl font-black tracking-tighter text-slate-900 uppercase">Visual Signal Audit</DialogTitle>
               </div>
-              <DialogTitle className="text-2xl font-black tracking-tighter">Visual Analytics Review</DialogTitle>
-            </div>
-            <DialogDescription className="text-xs font-bold text-slate-400 uppercase tracking-widest">Inference Source Analysis #TX_{selectedAction?.id}</DialogDescription>
-          </DialogHeader>
+              <DialogDescription className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Signal Origin Analysis #TX_{selectedAction?.id}</DialogDescription>
+            </DialogHeader>
 
-          <div className="space-y-8">
-            <Card className="aspect-video bg-slate-900 rounded-[32px] overflow-hidden relative group border border-white/5">
-              {selectedAction?.video_url && !useMockData ? (
-                <video
-                  src={selectedAction.video_url}
-                  className="w-full h-full object-cover"
-                  controls
-                  autoPlay
-                />
-              ) : (
-                <>
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-black/20 transition-colors">
-                    <div className="w-20 h-20 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 group-hover:scale-110 transition-transform">
-                      <Play className="w-8 h-8 text-white fill-current ml-1" />
+            <div className="space-y-8">
+              <Card className="aspect-video bg-slate-900 rounded-[32px] overflow-hidden relative group border border-white/5">
+                {selectedAction?.video_url && !useMockData ? (
+                  <video
+                    src={selectedAction.video_url}
+                    className="w-full h-full object-cover"
+                    controls
+                    autoPlay
+                  />
+                ) : (
+                  <>
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-black/20 transition-colors">
+                      <div className="w-20 h-20 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 group-hover:scale-110 transition-transform">
+                        <Play className="w-8 h-8 text-white fill-current ml-1" />
+                      </div>
                     </div>
-                  </div>
-                  <div className="absolute bottom-6 left-6 right-6 h-12 flex items-end justify-between px-4">
-                    {Array.from({ length: 40 }).map((_, i) => (
-                      <div key={i} className="w-1 bg-primary/20 rounded-full transition-all" style={{ height: `${20 + Math.random() * 80}%` }} />
-                    ))}
-                  </div>
-                </>
-              )}
-              <div className="absolute top-6 left-6 flex flex-col gap-2">
-                <Badge className="bg-primary hover:bg-primary border-none text-[9px] font-black uppercase tracking-widest h-6">Live Link</Badge>
-                <Badge className="bg-white/10 backdrop-blur text-white border-none text-[9px] font-black uppercase tracking-widest h-6">Object: {selectedAction?.action}</Badge>
-              </div>
-            </Card>
+                    <div className="absolute bottom-6 left-6 right-6 h-12 flex items-end justify-between px-4">
+                      {Array.from({ length: 40 }).map((_, i) => (
+                        <div key={i} className="w-1 bg-primary/20 rounded-full transition-all" style={{ height: `${20 + Math.random() * 80}%` }} />
+                      ))}
+                    </div>
+                  </>
+                )}
+                <div className="absolute top-6 left-6 flex flex-col gap-2">
+                  <Badge className="bg-primary hover:bg-primary border-none text-[9px] font-black uppercase tracking-widest h-6">Live Link</Badge>
+                  <Badge className="bg-white/10 backdrop-blur text-white border-none text-[9px] font-black uppercase tracking-widest h-6">Object: {selectedAction?.action}</Badge>
+                </div>
+              </Card>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-6 bg-slate-50 rounded-3xl space-y-1">
-                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Inference Engine</div>
-                <div className="text-xs font-black">YOLOv8-Small-Quant</div>
+              <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar snap-x">
+                <div className="p-6 bg-slate-50 rounded-3xl space-y-1 min-w-[200px] border border-slate-100 flex flex-col justify-center text-center snap-center">
+                  <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Classification Engine</div>
+                  <div className="text-xs font-black text-slate-900 leading-tight">YOLOv8-Small-Quant</div>
+                </div>
+                <div className="p-6 bg-slate-50 rounded-3xl space-y-1 min-w-[200px] border border-slate-100 flex flex-col justify-center text-center snap-center">
+                  <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Fidelity Threshold</div>
+                  <div className="text-xs font-black text-slate-900 leading-tight">{(selectedAction?.confidence || 0.5) * 100}% Verification</div>
+                </div>
               </div>
-              <div className="p-6 bg-slate-50 rounded-3xl space-y-1">
-                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Confidence Threshold</div>
-                <div className="text-xs font-black">{(selectedAction?.confidence || 0.5) * 100}% Verification</div>
-              </div>
-            </div>
 
-            <div className="flex justify-end gap-3 pt-6">
-              <Button variant="ghost" onClick={() => setIsVideoModalOpen(false)} className="font-bold text-xs uppercase tracking-widest h-12 px-8">Dismiss Audit</Button>
-              <Button onClick={() => { handleAudit(selectedAction!.id, 'verified'); setIsVideoModalOpen(false); }} className="bg-slate-900 text-white font-black text-xs uppercase tracking-widest h-12 px-10 rounded-2xl shadow-2xl shadow-slate-200">
-                Confirm Signal →
-              </Button>
+              <div className="flex justify-end gap-3 pt-6 border-t border-slate-100 mt-6 pt-6">
+                <Button variant="ghost" onClick={() => setIsVideoModalOpen(false)} className="font-bold text-xs uppercase tracking-widest h-12 px-8">Close Audit</Button>
+                <Button onClick={() => { handleAudit(selectedAction!.id, 'verified'); setIsVideoModalOpen(false); }} className="bg-slate-900 text-white font-black text-xs uppercase tracking-widest h-12 px-10 rounded-2xl shadow-2xl shadow-slate-200">
+                  Confirm Signal →
+                </Button>
+              </div>
             </div>
           </div>
         </DialogContent>
       </Dialog>
-    </DashboardLayout>
+    </DashboardLayout >
   );
 };
 

@@ -13,9 +13,7 @@ Base = declarative_base()
 class Person(Base):
     """Person tracking table - Campus optimized"""
     __tablename__ = 'persons'
-    __table_args__ = (
-        CheckConstraint('total_credits_earned >= 0', name='check_credits_positive'),
-    )
+    __table_args__ = ()
     
     person_id = Column(String(50), primary_key=True)  # e.g., "STU_CS_2024_001" or "person_000"
     student_id = Column(String(50), nullable=True, index=True)  # Actual student/faculty ID
@@ -60,8 +58,6 @@ class Event(Base):
         CheckConstraint('person_count >= 0', name='check_person_count_positive'),
         CheckConstraint('confidence >= 0.0 AND confidence <= 1.0', name='check_confidence_range'),
         CheckConstraint('device_count >= 0', name='check_device_count_positive'),
-        CheckConstraint('energy_saved_estimate >= 0', name='check_energy_positive'),
-        CheckConstraint('blockchain_credits >= 0', name='check_event_credits_positive'),
     )
     
     event_id = Column(Integer, primary_key=True, autoincrement=True)
@@ -82,6 +78,8 @@ class Event(Base):
     
     # Detection metadata
     confidence = Column(Float, default=0.0)
+    overall_confidence = Column(Float, default=0.0)
+    action_confidence = Column(Float, default=0.0)
     detection_method = Column(String(50), nullable=True)  # 'face' or 'appearance'
     
     # Device information
@@ -99,7 +97,7 @@ class Event(Base):
     # Energy tracking
     energy_saved_estimate = Column(Float, default=0.0)  # Watts or kWh
     blockchain_credits = Column(Float, default=0.0)  # ₹ value
-    status = Column(String(20), default='verified', index=True)  # 'pending', 'verified', 'rejected'
+    status = Column(String(20), default='pending', index=True)  # 'pending', 'verified', 'rejected'
     
     # Device state tracking
     devices_on = Column(JSON, default='[]')  # List of devices in ON state
@@ -125,8 +123,8 @@ class Event(Base):
             'bbox': self.bbox,
             'face_bbox': self.face_bbox,
             'confidence': self.confidence,
-            'overall_confidence': self.confidence,
-            'action_confidence': self.confidence,
+            'overall_confidence': self.overall_confidence or self.confidence,
+            'action_confidence': self.action_confidence or self.confidence,
             'detection_method': self.detection_method,
             'devices_detected': self.devices_detected or [],
             'device_count': self.device_count,
@@ -156,7 +154,7 @@ class PersonActivity(Base):
     details = Column(JSON, nullable=True)  # Additional metadata
     
     # Incentive tracking
-    incentive_points = Column(Integer, default=0)  # Positive or negative
+    incentive_points = Column(Float, default=0.0)  # Positive or negative
     incentive_reason = Column(String(255), nullable=True)
     
     # Relationship to person
@@ -209,6 +207,34 @@ class User(Base):
         }
 
 
+class ContactInquiry(Base):
+    """Contact form submissions from homepage"""
+    __tablename__ = 'contact_inquiries'
+    
+    inquiry_id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False)
+    email = Column(String(255), nullable=False, index=True)
+    message = Column(String(2000), nullable=False)
+    submitted_at = Column(DateTime, default=datetime.now, index=True)
+    status = Column(String(20), default='new', index=True)  # 'new', 'read', 'responded', 'archived'
+    ip_address = Column(String(45), nullable=True)  # Support IPv6
+    user_agent = Column(String(500), nullable=True)
+    
+    def __repr__(self):
+        return f"<ContactInquiry(inquiry_id={self.inquiry_id}, email='{self.email}', status='{self.status}')>"
+    
+    def to_dict(self):
+        """Convert contact inquiry to dictionary"""
+        return {
+            'inquiry_id': self.inquiry_id,
+            'name': self.name,
+            'email': self.email,
+            'message': self.message,
+            'submitted_at': self.submitted_at.isoformat() if self.submitted_at else None,
+            'status': self.status
+        }
+
+
 class Database:
     """Database management class"""
     
@@ -235,6 +261,9 @@ class Database:
         # Create tables if they don't exist
         Base.metadata.create_all(self.engine)
         
+        # Ensure secondary columns exist (manual migrations)
+        self._ensure_schema_up_to_date()
+        
         # Enable SQLite optimizations
         with self.engine.connect() as conn:
             conn.execute(text('PRAGMA journal_mode=WAL'))
@@ -242,10 +271,65 @@ class Database:
             conn.execute(text('PRAGMA cache_size=-64000'))
             conn.execute(text('PRAGMA busy_timeout=30000'))  # 30 seconds
             conn.commit()
-        
+            
         # Auto-create admin user if no users exist
         if auto_create_admin:
             self._ensure_admin_exists()
+    
+    def _ensure_schema_up_to_date(self):
+        """Add missing columns to existing tables and handle constraint resets"""
+        db_path = str(self.engine.url).replace('sqlite:///', '')
+        needs_reset = False
+        
+        try:
+            with self.engine.connect() as conn:
+                # 1. Check for Event table columns
+                existing_event_cols = [c['name'] for c in self.engine.dialect.get_columns(conn, 'events')]
+                
+                # Columns to add if missing
+                event_updates = [
+                    ('overall_confidence', 'FLOAT DEFAULT 0.0'),
+                    ('action_confidence', 'FLOAT DEFAULT 0.0')
+                ]
+                
+                for col_name, col_type in event_updates:
+                    if col_name not in existing_event_cols:
+                        print(f"🔧 Database Sync: Adding missing column '{col_name}' to 'events' table")
+                        conn.execute(text(f"ALTER TABLE events ADD COLUMN {col_name} {col_type}"))
+                
+                # 2. Check for outdated constraints (require full reset in SQLite)
+                event_sql = conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='events'")).scalar()
+                person_sql = conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='persons'")).scalar()
+                
+                if (event_sql and 'check_energy_positive' in event_sql) or \
+                   (person_sql and 'check_credits_positive' in person_sql):
+                    print("🔧 Database Sync: Outdated constraints detected. Ledger reset required.")
+                    needs_reset = True
+                
+                conn.commit()
+        except Exception as e:
+            # Table might not exist yet, which is fine
+            pass
+            
+        if needs_reset:
+            try:
+                import os
+                print(f"🧹 Clearing legacy ledger: {db_path}")
+                
+                # Dispose engine to release file locks
+                self.engine.dispose()
+                
+                timestamp = int(datetime.now().timestamp())
+                os.rename(db_path, f"{db_path}.old.{timestamp}")
+                print("✅ Legacy ledger archived.")
+                
+                # Re-create tables in the new database file
+                Base.metadata.create_all(self.engine)
+                print("✅ New ledger initialized with updated constraints.")
+                
+            except Exception as e:
+                print(f"❌ Reset failed: {e}")
+                print("💡 Please manually delete 'outputs/sca_events.db' if it persists.")
     
     def _ensure_admin_exists(self):
         """Create default admin user if no users exist in the system"""
@@ -348,6 +432,8 @@ class Database:
                 action_type=event_data.get('action_type'),
                 energy_saved_estimate=event_data.get('energy_saved_estimate', 0.0),
                 blockchain_credits=event_data.get('blockchain_credits', 0.0),
+                overall_confidence=event_data.get('overall_confidence', 0.0),
+                action_confidence=event_data.get('action_confidence', 0.0),
                 devices_on=event_data.get('devices_on', []),
                 devices_off=event_data.get('devices_off', []),
                 lights_on=event_data.get('lights_on', False)
@@ -460,42 +546,54 @@ class Database:
         print("Interrogating database for node census...")
         session = self.get_session()
         try:
-            from sqlalchemy import func
+            from sqlalchemy import func, case
+            from datetime import timedelta
             
-            # Get energy impact per person from Events
+            # Weekly threshold
+            one_week_ago = datetime.now() - timedelta(days=7)
+            
+            # Get energy impact and trust per person from Events
             energy_stats = session.query(
                 Event.person_id,
                 func.sum(Event.energy_saved_estimate).label('energy_saved'),
-                func.count(Event.event_id).label('event_count')
+                func.count(Event.event_id).label('event_count'),
+                func.avg(Event.confidence).label('avg_conf')
             ).filter(Event.person_id.isnot(None)) \
              .group_by(Event.person_id).all()
             
-            energy_map = {row.person_id: (float(row.energy_saved or 0), row.event_count) for row in energy_stats}
+            energy_map = {row.person_id: (float(row.energy_saved or 0), row.event_count, float(row.avg_conf or 0.95)) for row in energy_stats}
             
-            # Get activity count per person
-            activity_counts = session.query(
+            # Get activity count and weekly gain per person
+            activity_stats = session.query(
                 PersonActivity.person_id,
-                func.count(PersonActivity.activity_id).label('act_count')
+                func.count(PersonActivity.activity_id).label('act_count'),
+                func.sum(case((PersonActivity.timestamp >= one_week_ago, PersonActivity.incentive_points), else_=0)).label('weekly_gain')
             ).group_by(PersonActivity.person_id).all()
             
-            activity_map = {row.person_id: row.act_count for row in activity_counts}
+            activity_map = {row.person_id: (row.act_count, int(row.weekly_gain or 0)) for row in activity_stats}
             
             # Get all persons with their cached credits
             persons = session.query(Person).all()
             
+            # Cache all users for faster lookup
+            users = session.query(User).all()
+            user_map = {user.email: user for user in users}
+            
             leaderboard = []
             for person in persons:
                 person_id = person.person_id
-                user = session.query(User).filter_by(email=person_id).first()
+                user = user_map.get(person_id)
                 
-                energy_saved, event_count = energy_map.get(person_id, (0.0, 0))
-                total_activities = activity_map.get(person_id, event_count) # Fallback to event count
+                energy_saved, event_count, avg_conf = energy_map.get(person_id, (0.0, 0, 0.95))
+                total_activities, weekly_gain = activity_map.get(person_id, (event_count, 0))
                 
                 leaderboard.append({
                     'person_id': person_id,
                     'name': user.name if user and user.name else (person.student_id or person_id),
                     'total_credits': float(person.total_credits_earned or 0),
                     'total_activities': total_activities,
+                    'weekly_gain': weekly_gain,
+                    'trust_score': avg_conf,
                     'department': person.department or (user.department if user else "Universal"),
                     'total_energy_saved': energy_saved,
                     'last_seen': person.last_seen.isoformat() if person.last_seen else None
@@ -512,25 +610,31 @@ class Database:
         try:
             from sqlalchemy import func
             
+            # Pending count for the audit stream
             pending_count = session.query(Event).filter_by(status='pending').count()
             
-            # High Confidence (HC) are verified events with confidence >= 0.8
+            # High Confidence (HC) are PENDING events with confidence >= 0.8 that can be bulk approved
             hc_count = session.query(Event).filter(
-                Event.status == 'verified',
+                Event.status == 'pending',
                 Event.confidence >= 0.8
             ).count()
             
-            # System Accuracy is the average confidence of all verified events
-            avg_conf = session.query(func.avg(Event.confidence)).filter_by(status='verified').scalar() or 0
-            
-            # Total events for accuracy context
+            # Total verified count
             total_verified = session.query(Event).filter_by(status='verified').count()
+            
+            # System Accuracy is the average overall confidence of verified events
+            avg_conf = 0.0
+            if total_verified > 0:
+                avg_conf = session.query(func.avg(Event.overall_confidence)).filter_by(status='verified').scalar() or 0
+            else:
+                # Fallback to general system confidence if no verified events yet
+                avg_conf = session.query(func.avg(Event.overall_confidence)).scalar() or 0.85
             
             # Get database file size
             import os
             db_size_kb = 0
             try:
-                # Extract path from sqlite URL (e.g., 'sqlite:///path/to/db')
+                # Extract path from sqlite URL
                 db_path = str(self.engine.url).replace('sqlite:///', '')
                 if os.path.exists(db_path):
                     db_size_kb = os.path.getsize(db_path) / 1024
