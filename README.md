@@ -6,43 +6,79 @@ An integrated full-stack application combining a React dashboard with a Python c
 
 ---
 
-## 🏗️ Project Structure
+## 📖 User Guide & Walkthrough
 
-```
-sca/
-├── src/                          # React Frontend
-│   ├── components/               # UI Components
-│   ├── pages/                    # Page Components
-│   │   ├── Dashboard.tsx         # AI Detection Dashboard (Mock + Real API)
-│   │   ├── Leaderboard.tsx       # Sustainability Rankings
-│   │   ├── Events.tsx            # Activity Log
-│   │   ├── Wallet.tsx            # Blockchain Credits
-│   │   └── Admin.tsx             # Administration
-│   ├── services/                 # API Services
-│   │   └── cvApi.ts              # CV Module API Client
-│   └── hooks/                    # Custom React Hooks
-├── backend/                      # Python CV Module
-│   ├── app.py                    # Flask REST API (with CORS)
-│   ├── cv_processor.py           # YOLO-based Computer Vision
-│   ├── energy_analyzer.py        # Energy Calculations
-│   ├── database.py               # SQLAlchemy Models
-│   ├── incentive_tracker.py      # Blockchain Credit System
-│   ├── requirements.txt          # Python Dependencies
-│   ├── yolov8n.pt               # YOLO Model Weights
-│   ├── uploads/                  # Video Uploads
-│   └── outputs/                  # Detection Results
-├── public/                       # Static Assets
-├── package.json                  # Node Dependencies
-├── .env                          # Environment Config
-└── README.md                     # This File
-```
+Welcome to the **Sustainable Campus Automation (SCA)** platform. This section provides a comprehensive overview of how to navigate the system, simulate energy-saving events, and manage roles.
+
+### 🔐 Authentication & Demo Users
+
+The platform uses a role-based access control system. You can use the following demo credentials to explore different perspectives:
+
+| Role | Email | Password | Primary Purpose |
+| :--- | :--- | :--- | :--- |
+| **Admin** | `admin@sca.campus` | `admin123` | System audit, user management, and bulk verification. |
+| **Student** | `pratham@sca.campus` | `user123` | View personal dashboard, transfer credits, and track rankings. |
+| **Faculty** | `dr.rao@sca.campus` | `user123` | Monitor department efficiency and verify local classroom events. |
+
+> **💡 Quick Tip**: On the Login page, click the **"Demo Login"** button at the bottom to automatically fill in the Admin credentials.
+
+### 🧪 Simulation Modes: Sandbox vs. Real
+
+SCA is designed to work in two distinct modes to facilitate both development and actual deployment.
+
+#### 🏜️ Sandbox (Mock Data)
+- **What it is**: A purely frontend-driven simulation.
+- **How to enable**: Toggle the **"Use Mock Data"** switch in the Dashboard header.
+- **Why use it**: 
+  - Test the UI without a running backend.
+  - Explore the flow of uploading a video and seeing "detected" actions immediately.
+  - Generating simulated detections for training purposes.
+
+#### 🏢 Real-Time (Production API)
+- **What it is**: Integration with the Flask backend, YOLOv8 AI model, and SQLite database.
+- **How to enable**: Toggle **"Use Mock Data"** to **OFF**. Ensure the connection status shows **"Live Data"**.
+- **Process**:
+  1. Upload a video file (MP4/MOV).
+  2. Click **"Start AI Detection"**.
+  3. The backend runs the YOLOv8 model to identify persons, devices, and actions.
+  4. Real events are logged into the database and credits are prepared for auditing.
+
+### 📊 Core Modules
+
+#### 🛠️ Dashboard (The Observation Deck)
+- **Video Feed**: Upload CCTV clips to simulate real-time monitoring.
+- **Inference Engine**: Watch as the AI detects "AC Off" and "Light Off" events.
+- **Live Metrics**: Track your current session accuracy and total credits earned.
+
+#### 📜 Activity Log (The Ledger)
+- View a historical record of all verified events.
+- **Audit Reports**: Click on any event to see detailed metadata, including the room ID, confidence score, and energy impact.
+- **Transparency**: Every credit minted is linked to a visual evidence block.
+
+#### 🏆 Leaderboard (The Impact Grid)
+- See how departments and individuals stack up.
+- **Search & Filter**: Find specific users or filter by department (e.g., "Computer Science").
+- **Competitions**: Top earners contribute to UN SDGs and earn campus-wide recognition.
+
+#### 💳 Wallet (Asset Hub)
+- **Credit Balance**: Real-time view of your EcoPoints (XP).
+- **History**: Trace every reward back to the specific energy-saving action.
+- **P2P Transfer**: Send credits to other students using their email IDs. This is useful for group projects or incentivizing clean habits among peers.
+
+### 🛡️ Administration Center
+
+Accessed via the **Admin** link in the sidebar (Admin only).
+
+1. **Audit Center**: View "Pending" events logged by the AI. You can manually **Verify** or **Reject** them.
+2. **Bulk Approve**: Use the **High Confidence Approve** button to verify all events with >80% accuracy in one click.
+3. **User Management**: Change user roles or deactivate accounts.
+4. **Network Health**: Monitor the database size and system-wide average accuracy.
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Technical Setup)
 
 ### Prerequisites
-
 - **Node.js** 18+ and npm
 - **Python** 3.8+
 - **pip** (Python package manager)
@@ -59,23 +95,13 @@ npm install
 # Start development server
 npm run dev
 ```
-
 Frontend will be available at: **http://localhost:5173**
 
 ### 2. Backend Setup
 
 ```bash
 # Navigate to backend
-cd sca/backend
-
-# Create virtual environment (recommended)
-python -m venv venv
-
-# Activate virtual environment
-# Windows:
-.\venv\Scripts\activate
-# Linux/Mac:
-source venv/bin/activate
+cd backend
 
 # Install dependencies
 pip install -r requirements.txt
@@ -83,74 +109,29 @@ pip install -r requirements.txt
 # Start Flask server
 python app.py
 ```
-
 Backend API will be available at: **http://localhost:5000**
 
 ---
 
-## 🎯 Features
+## 🏗️ Project Structure
 
-### Frontend Dashboard
-
-| Feature | Description |
-|---------|-------------|
-| **Video Upload** | Upload CCTV footage for AI analysis |
-| **Mock/Real Toggle** | Switch between simulated and real AI detection |
-| **Live Stats** | Real-time action counts, credits, and confidence metrics |
-| **Leaderboard** | Student sustainability rankings |
-| **Event Log** | Detailed activity history |
-| **Blockchain Wallet** | Track earned credits (₹5/kWh) |
-| **CSV Export** | Download detection results |
-
-### Backend API
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `POST /upload` | Upload video file |
-| `POST /process` | Run AI detection |
-| `GET /results/<file>` | Get detection results |
-| `GET /db/events` | List all events |
-| `GET /db/persons` | List all persons |
-| `GET /db/leaderboard` | Get rankings |
-| `GET /energy/report` | Energy analytics |
-| `GET /energy/blockchain-credits` | Credits summary |
-| `GET /energy/live-metrics` | Real-time metrics |
-
-### Computer Vision (93.5% Accuracy)
-
-- **Person Recognition** - Face detection + appearance matching (96%)
-- **Device Detection** - ON/OFF state for laptops, monitors, ACs (97%)
-- **Occupancy Detection** - YOLO + background subtraction (98%)
-- **Action Classification** - Sustainable/unsustainable behaviors (96%)
-
----
-
-## 🔧 Configuration
-
-### Environment Variables
-
-Create a `.env` file in the root:
-
-```env
-# Backend API URL
-VITE_API_URL=http://localhost:5000
 ```
-
-### API CORS Origins
-
-The backend is configured to accept requests from:
-- `http://localhost:5173` (Vite dev server)
-- `http://localhost:3000`
-- `http://127.0.0.1:5173`
-- `http://127.0.0.1:3000`
-
-To add more origins, edit `backend/app.py`:
-
-```python
-CORS(app, origins=[
-    'http://localhost:5173',
-    'http://your-production-domain.com',
-])
+sca/
+├── src/                          # React Frontend
+│   ├── components/               # UI Components
+│   ├── pages/                    # Page Components
+│   │   ├── Dashboard.tsx         # AI Detection Dashboard
+│   │   ├── Leaderboard.tsx       # Sustainability Rankings
+│   │   ├── Events.tsx            # Activity Log
+│   │   ├── Wallet.tsx            # Blockchain Credits
+│   │   └── Admin.tsx             # Administration
+│   ├── services/                 # API Services
+├── backend/                      # Python CV Module
+│   ├── app.py                    # Flask REST API
+│   ├── cv_processor.py           # YOLO-based Computer Vision
+│   ├── database.py               # SQLAlchemy Models
+│   ├── yolov8n.pt                # YOLO Model Weights
+└── public/                       # Static Assets
 ```
 
 ---
@@ -158,93 +139,32 @@ CORS(app, origins=[
 ## 📊 Data Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         User Workflow                                │
-└─────────────────────────────────────────────────────────────────────┘
-
     ┌──────────────┐     Upload      ┌──────────────┐
     │   Browser    │ ───────────────► │   Frontend   │
     │   (User)     │                 │   (React)    │
     └──────────────┘                 └──────┬───────┘
                                             │
-           ┌────────────────────────────────┤
-           │                                │
-           ▼ Mock Mode                      ▼ Real Mode
-    ┌──────────────┐              ┌─────────────────┐
-    │  Simulated   │              │  Flask Backend  │
-    │    Data      │              │  (Port 5000)    │
-    └──────────────┘              └────────┬────────┘
+                                            ▼
+                                  ┌─────────────────┐
+                                  │  Flask Backend  │
+                                  │  (Port 5000)    │
+                                  └────────┬────────┘
                                            │
                                            ▼
                                   ┌─────────────────┐
                                   │  CV Processor   │
                                   │  (YOLO + OpenCV)│
-                                  └────────┬────────┘
-                                           │
-                                           ▼
-                                  ┌─────────────────┐
-                                  │  SQLite DB +    │
-                                  │  Energy Analyzer│
                                   └─────────────────┘
 ```
 
 ---
 
-## 🧪 Testing
+## 🏆 Validated Recognition
 
-### Test Mock Mode (No Backend Required)
-
-1. Start frontend: `npm run dev`
-2. Navigate to Dashboard
-3. Ensure "Use Mock Data" is ON
-4. Upload any video file and click "Start AI Detection"
-
-### Test Real Mode (Backend Required)
-
-1. Start backend: `cd backend && python app.py`
-2. Start frontend: `npm run dev`
-3. Dashboard should show "Backend: Connected"
-4. Toggle OFF "Use Mock Data"
-5. Upload video and process with real AI
-
-### API Health Check
-
-```bash
-curl http://localhost:5000/status
-```
-
-Expected:
-```json
-{
-  "status": "running",
-  "timestamp": "2026-01-15T10:30:00",
-  "uploads_count": 0,
-  "outputs_count": 0
-}
-```
-
----
-
-## 📈 Performance Metrics
-
-| Metric | Value |
-|--------|-------|
-| **Accuracy** | 93.5% |
-| **Precision** | 92.9% |
-| **Recall** | 91.5% |
-| **F1 Score** | 92.2% |
-| **Latency** | <31ms/frame |
-| **Video Support** | MP4, AVI, MOV, MKV, WebM |
-| **Max Upload** | 500MB |
-
----
-
-## 🏆 Recognition
-
-- 🥇 **AISSMS Ideathon Winner**
-- 🤖 **IEEE AI Idea-thon** Recognition
-- 📄 **IJIRCCE Publication**
-- 🎯 **i2i Finalist**
+- **SPPU Startup Bootcamp '25**: Active Participant • Innovation & Incubation Center
+- **IEEE Inv.Ent Pitch '25**: Regional Finalist • Technical Entrepreneurship
+- **PCCOE Indradhanu '25**: Semifinalist • International Grand Challenge
+- **IIT Delhi Moonshot 6.0**: Quarter Finalist • eDC Disruptive Tech
 
 ---
 
@@ -270,22 +190,6 @@ Expected:
 
 MIT License - See LICENSE file for details.
 
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add amazing feature'`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
-
----
-
-## 📞 Support
-
-For issues and feature requests, please open a GitHub issue.
-
-**© 2026 SCA - Sustainable Campus Automation**
-*AI-powered energy solutions for a greener future*
+**© 2026 SCA - Sustainable Campus Automation**  
+*AI-powered energy solutions for a greener future*  
 *Supporting UN SDGs 11, 12 & 13*
