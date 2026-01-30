@@ -7,7 +7,7 @@ import numpy as np
 from cv_processor import CVProcessor
 import json
 from datetime import datetime, timedelta
-from database import Database, Event, Person, PersonActivity, User
+from database import Database, Event, Person, PersonActivity, User, text
 from energy_analyzer import EnergyAnalyzer
 from jwt_auth import (
     create_access_token, create_refresh_token, decode_token,
@@ -40,18 +40,23 @@ app = Flask(__name__)
 app.json = NumpyJSONProvider(app)
 
 # Enable CORS with environment-based origins
-CORS(app, origins=config.CORS_ORIGINS, supports_credentials=True)
+if config.is_development():
+    # In development, allow all origins for easier local testing
+    CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+else:
+    CORS(app, origins=config.CORS_ORIGINS, supports_credentials=True)
 
-# Configuration from environment
-UPLOAD_FOLDER = Path('uploads')
-OUTPUT_FOLDER = Path('outputs')
-MODELS_FOLDER = Path('models')
+# Configuration from environment - Using absolute paths for robustness
+BASE_DIR = Path(__file__).resolve().parent.parent
+UPLOAD_FOLDER = BASE_DIR / 'uploads'
+OUTPUT_FOLDER = BASE_DIR / 'outputs'
+MODELS_FOLDER = BASE_DIR / 'models'
 ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'mkv', 'webm'}
 
 # Create folders if they don't exist
-UPLOAD_FOLDER.mkdir(exist_ok=True)
-OUTPUT_FOLDER.mkdir(exist_ok=True)
-MODELS_FOLDER.mkdir(exist_ok=True)
+UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
+OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
+MODELS_FOLDER.mkdir(parents=True, exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
@@ -152,8 +157,8 @@ def status():
         # Check blockchain connectivity
         blockchain_status = 'operational' if blockchain_manager and blockchain_manager.w3.is_connected() else 'offline'
         
-        # Overall node status
-        overall_status = 'operational' if db_status == 'operational' else 'degraded'
+        # Overall node status - degraded if either DB or Blockchain is not operational
+        overall_status = 'operational' if db_status == 'operational' and blockchain_status == 'operational' else 'degraded'
         
         return jsonify({
             'status': overall_status,
@@ -349,6 +354,20 @@ def register():
             department=department
         )
         session.add(new_user)
+        
+        # Also create or update corresponding Person record for leaderboard/tracking
+        existing_person = session.query(Person).filter_by(person_id=email).first()
+        if not existing_person:
+            new_person = Person(
+                person_id=email,
+                student_id=name,
+                department=department,
+                user_type=role,
+                first_seen=datetime.now(),
+                last_seen=datetime.now()
+            )
+            session.add(new_person)
+        
         session.commit()
         session.refresh(new_user)
         
@@ -439,6 +458,162 @@ def get_current_user_info():
         'user': user
     })
 
+
+@app.route('/auth/wallet', methods=['POST'])
+@jwt_required
+def update_user_wallet():
+    """Update wallet address for the current authenticated user"""
+    user_info = get_current_user()
+    email = user_info['email']
+    data = request.json
+    
+    if not data or 'wallet_address' not in data:
+        return jsonify({'error': 'Wallet address is required'}), 400
+        
+    wallet_address = data.get('wallet_address')
+    
+    # Validation logic: allow empty string for unlinking, otherwise check EIP-55 format
+    if wallet_address:
+        if not wallet_address.startswith('0x') or len(wallet_address) != 42:
+            return jsonify({'error': 'Invalid Ethereum wallet address format'}), 400
+    else:
+        # User is unlinking
+        wallet_address = None
+        
+    session = db.get_session()
+    try:
+        person = session.query(Person).filter_by(person_id=email).first()
+        if not person:
+            # Create a person record if it doesn't exist
+            person = Person(
+                person_id=email,
+                wallet_address=wallet_address,
+                department=user_info.get('department', 'General'),
+                total_credits_earned=0.0
+            )
+            session.add(person)
+        else:
+            person.wallet_address = wallet_address
+            
+        session.commit()
+        return jsonify({
+            'success': True,
+            'message': 'Wallet address registered with node authority.',
+            'wallet_address': wallet_address
+        })
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+@app.route('/energy/blockchain-credits', methods=['GET'])
+@jwt_required
+def get_energy_blockchain_credits():
+    """Get internal and on-chain credit summary for a user"""
+    person_id = request.args.get('person_id')
+    user_info = get_current_user()
+    if not person_id:
+        person_id = user_info['email']
+        
+    session = db.get_session()
+    try:
+        person = session.query(Person).filter_by(person_id=person_id).first()
+        internal_credits = person.total_credits_earned if person else 0.0
+        wallet_address = person.wallet_address if person else None
+        
+        blockchain_credits = 0.0
+        blockchain_status = False
+        if wallet_address and blockchain_manager:
+            blockchain_credits = blockchain_manager.get_wallet_balance(wallet_address)
+            blockchain_status = blockchain_manager.is_connected
+            
+        activities = session.query(PersonActivity).filter_by(person_id=person_id).order_by(PersonActivity.timestamp.desc()).limit(30).all()
+        history = [a.to_dict() for a in activities]
+            
+        return jsonify({
+            'success': True,
+            'total_credits': internal_credits,
+            'total_blockchain_credits': blockchain_credits,
+            'blockchain_status': blockchain_status,
+            'wallet_address': wallet_address,
+            'recent_history': history
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
+
+@app.route('/energy/transfer', methods=['POST'])
+@jwt_required
+def energy_transfer_credits():
+    """Transfer credits between persons or withdraw to external node"""
+    data = request.json
+    if not data or 'sender_id' not in data or 'amount' not in data or 'recipient_id' not in data:
+        return jsonify({'error': 'Missing required fields: sender_id, amount, recipient_id'}), 400
+    
+    sender_id = data['sender_id']
+    recipient_id = data['recipient_id']
+    amount = float(data['amount'])
+    
+    if amount <= 0:
+        return jsonify({'error': 'Amount must be positive'}), 400
+    
+    session = db.get_session()
+    try:
+        from database import Person, PersonActivity
+        # Check sender balance
+        sender = session.query(Person).filter_by(person_id=sender_id).first()
+        if not sender or sender.total_credits_earned < amount:
+            return jsonify({'error': 'Insufficient internal credits'}), 400
+        
+        # Deduct from sender
+        sender.total_credits_earned -= amount
+        
+        # Add to recipient (if they exist in our node)
+        recipient = session.query(Person).filter_by(person_id=recipient_id).first()
+        if recipient:
+            recipient.total_credits_earned += amount
+            
+        # Record activities
+        import hashlib
+        tx_hash = f"0x{hashlib.sha256(f'{sender_id}{recipient_id}{amount}{datetime.now()}'.encode()).hexdigest()[:40]}"
+        
+        # Log for sender
+        debit = PersonActivity(
+            person_id=sender_id,
+            activity_type='disbursement',
+            incentive_points=-amount,
+            incentive_reason=f'Transfer to {recipient_id}',
+            details={'recipient': recipient_id, 'tx_hash': tx_hash}
+        )
+        
+        # Log for recipient
+        credit = PersonActivity(
+            person_id=recipient_id,
+            activity_type='transfer_receipt',
+            incentive_points=amount,
+            incentive_reason=f'Transfer from {sender_id}',
+            details={'sender': sender_id, 'tx_hash': tx_hash}
+        )
+        
+        session.add(debit)
+        session.add(credit)
+        session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Transfer successful',
+            'transaction_hash': tx_hash,
+            'amount': amount
+        })
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
 
 @app.route('/auth/users', methods=['GET'])
 @jwt_required
@@ -548,8 +723,16 @@ def upload_video():
 
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
-    """Serve uploaded video files"""
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    """Serve uploaded video files with explicit mimetype"""
+    response = send_from_directory(app.config['UPLOAD_FOLDER'], filename, mimetype='video/mp4')
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
+
+
+@app.route('/uploads/<filename>')
+def uploaded_file_simple(filename):
+    """Fallback simple route for video serving"""
+    return uploaded_file(filename)
 
 
 @app.route('/process', methods=['POST'])
@@ -637,6 +820,7 @@ def get_results(filename):
         with open(output_path, 'r') as f:
             data = json.load(f)
         return jsonify(data)
+
 
 
 @app.route('/list/uploads', methods=['GET'])
@@ -929,19 +1113,25 @@ def export_events():
         output = io.StringIO()
         writer = csv.writer(output)
         
-        # Headers
+        # Headers - Terminological consistency with UX (Fidelity vs Confidence)
         writer.writerow([
             'Event ID', 'Timestamp', 'Room', 'Department', 
-            'Action', 'Action Type', 'Confidence', 
+            'Action', 'Action Type', 'Fidelity index', 
             'Energy Saved', 'Credits'
         ])
         
         # Data
         for e in events:
             writer.writerow([
-                e.event_id, e.timestamp, e.room_id, e.department,
-                e.action_detected, e.action_type, e.confidence,
-                e.energy_saved_estimate, e.blockchain_credits
+                e.event_id, 
+                e.timestamp.isoformat() if hasattr(e.timestamp, 'isoformat') else e.timestamp,
+                e.room_id,
+                e.department,
+                e.action_detected or 'unknown',
+                e.action_type or 'unknown',
+                f"{round((e.overall_confidence or 0) * 100)}%" if hasattr(e, 'overall_confidence') else "0%",
+                f"{e.energy_saved_estimate}W",
+                e.blockchain_credits
             ])
             
         output.seek(0)
@@ -950,6 +1140,51 @@ def export_events():
             mimetype='text/csv',
             as_attachment=True,
             download_name=f'sca_audit_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
+@app.route('/auth/users/export', methods=['GET'])
+@jwt_required
+@admin_required
+def export_users():
+    """Export all system users as CSV"""
+    session = db.get_session()
+    try:
+        users = session.query(User).all()
+        
+        import csv
+        import io
+        
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Headers
+        writer.writerow([
+            'User ID', 'Name', 'Email', 'Role', 
+            'Department', 'Status', 'Registration Date'
+        ])
+        
+        for user in users:
+            writer.writerow([
+                user.user_id,
+                user.name,
+                user.email,
+                user.role,
+                user.department,
+                'Active' if user.is_active else 'Disabled',
+                user.created_at.isoformat() if user.created_at else 'N/A'
+            ])
+            
+        output.seek(0)
+        return send_file(
+            io.BytesIO(output.getvalue().encode('utf-8')),
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=f'sca_users_export_{datetime.now().strftime("%Y%m%d")}.csv'
         )
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1010,6 +1245,7 @@ def get_db_person(person_id):
             'total_detections': person.total_detections,
             'detection_method': person.detection_method,
             'face_image_path': person.face_image_path,
+            'wallet_address': person.wallet_address,
             'total_score': score
         })
     except Exception as e:
@@ -1134,14 +1370,31 @@ def get_db_stats():
     session = db.get_session()
     try:
         from sqlalchemy import func
-        # Use count() instead of loading all objects
-        total_persons = session.query(Person).count()
-        total_events = session.query(Event).count()
+        # Calculate verified automated impact from events
+        event_credits = session.query(func.sum(Event.blockchain_credits)).filter(
+            Event.blockchain_credits > 0,
+            Event.status == 'verified'
+        ).scalar() or 0
+        total_energy_saved = session.query(func.sum(Event.energy_saved_estimate)).filter(
+            Event.energy_saved_estimate > 0,
+            Event.status == 'verified'
+        ).scalar() or 0
+        
+        # Calculate manual disbursements and incentives from activities
+        # Filter for positive points only (receipts/disbursements to users)
+        manual_credits = session.query(func.sum(PersonActivity.incentive_points)).filter(
+            PersonActivity.incentive_points > 0
+        ).scalar() or 0
+        
+        total_credits = float(event_credits) + float(manual_credits)
+        
+        # Count verified automated signals + manual activity events
+        total_events = session.query(Event).filter(Event.status == 'verified').count()
         total_activities = session.query(PersonActivity).count()
         
-        # Calculate aggregates
-        total_credits = session.query(func.sum(Event.blockchain_credits)).scalar() or 0
-        total_energy_saved = session.query(func.sum(Event.energy_saved_estimate)).scalar() or 0
+        # For the UI 'Verified Signals' count, we can combine them or keep separate
+        # User requested 'disbursed by admins', so summing them makes sense
+        display_signals = total_events + total_activities
         
         # Recent activity - load only necessary columns
         recent_events = session.query(Event).order_by(Event.timestamp.desc()).limit(5).all()
@@ -1151,8 +1404,8 @@ def get_db_stats():
             session.expunge(event)
         
         return jsonify({
-            'total_persons': total_persons,
-            'total_events': total_events,
+            'total_persons': session.query(Person).count(),
+            'total_events': display_signals,
             'total_activities': total_activities,
             'total_credits': float(total_credits),
             'total_energy_saved': float(total_energy_saved),
@@ -1249,14 +1502,26 @@ def get_blockchain_credits():
         if person_id:
             result['person_id'] = person_id
             
-            # Fetch actual balance from Person table
+            # Fetch data from Person record
             person = session.query(Person).filter_by(person_id=person_id).first()
             if person:
-                result['total_blockchain_credits'] = round(person.total_credits_earned, 2)
+                result['total_credits'] = round(person.total_credits_earned, 2)
+                result['wallet_address'] = person.wallet_address
+                
+                # Fetch actual blockchain balance if wallet is linked and blockchain is operational
+                if person.wallet_address and blockchain_manager and blockchain_manager.is_connected:
+                    try:
+                        blockchain_balance = blockchain_manager.get_wallet_balance(person.wallet_address)
+                        result['total_blockchain_credits'] = round(float(blockchain_balance), 2)
+                    except Exception as e:
+                        print(f"⚠️ Failed to fetch balance for {person.wallet_address}: {e}")
+                        result['total_blockchain_credits'] = 0.0
+                else:
+                    result['total_blockchain_credits'] = 0.0
             else:
-                # If no person record exists yet, the events query above handles the sum
-                # but we should ensure a record is created for future transfers
-                result['total_blockchain_credits'] = round(float(total_credits), 2)
+                # Fallback for new users without Persona record
+                result['total_credits'] = round(float(total_credits), 2)
+                result['total_blockchain_credits'] = 0.0
                 
             # Fetch recent activity for this person
             from database import PersonActivity
@@ -1371,6 +1636,75 @@ def transfer_credits():
             'amount': amount
         })
         
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
+
+
+
+@app.route('/energy/bridge', methods=['POST'])
+@jwt_required
+def bridge_credits():
+    """Convert internal credits to on-chain tokens (Mint/Award)"""
+    user_info = get_current_user()
+    email = user_info['email']
+    data = request.json
+    
+    amount = data.get('amount')
+    if not amount:
+        return jsonify({'error': 'Amount is required'}), 400
+        
+    try:
+        amount = float(amount)
+        if amount <= 0:
+            return jsonify({'error': 'Amount must be positive'}), 400
+    except ValueError:
+        return jsonify({'error': 'Invalid amount'}), 400
+        
+    session = db.get_session()
+    try:
+        person = session.query(Person).filter_by(person_id=email).first()
+        if not person or person.total_credits_earned < amount:
+            return jsonify({'error': 'Insufficient internal credits to bridge.'}), 400
+            
+        if not person.wallet_address:
+            return jsonify({'error': 'No wallet address linked. Please connect MetaMask first.'}), 400
+            
+        # 1. Debit internal balance
+        person.total_credits_earned -= amount
+        
+        # 2. Trigger On-Chain Award
+        tx_hash = "0x_simulated"
+        if blockchain_manager and blockchain_manager.is_connected:
+            # Award credits on-chain
+            tx_hash = blockchain_manager.mint_credits(
+                target_address=person.wallet_address,
+                amount=amount,
+                action_type="bridge_withdrawal",
+                room_id="CAMPUS_NODE"
+            ) or "0x_failed"
+            
+        # 3. Log activity
+        withdrawal = PersonActivity(
+            person_id=email,
+            activity_type='bridge_withdrawal',
+            incentive_points=-float(amount),
+            incentive_reason='Internal Credits -> Blockchain SCC',
+            details={'tx_hash': tx_hash, 'wallet': person.wallet_address}
+        )
+        session.add(withdrawal)
+        session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Bridge operation initiated.',
+            'transaction_hash': tx_hash,
+            'amount_bridged': amount
+        })
     except Exception as e:
         session.rollback()
         return jsonify({'error': str(e)}), 500

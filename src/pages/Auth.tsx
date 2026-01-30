@@ -28,7 +28,7 @@ const Auth = () => {
     const [name, setName] = useState("");
     const [role, setRole] = useState<'student' | 'faculty'>('student');
     const [department, setDepartment] = useState("");
-    const [useMockData, setUseMockData] = useState(true);
+    const [useMockData, setUseMockData] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const { loginWithTokens, isAuthenticated } = useAuthStore();
     const navigate = useNavigate();
@@ -45,11 +45,20 @@ const Auth = () => {
         }
     }, [isAuthenticated, navigate, from]);
 
+    const [demoIndex, setDemoIndex] = useState(0);
+
     const handleQuickSync = () => {
-        setEmail("admin@sca.campus");
-        setPassword("admin123");
+        const demos = [
+            { e: "admin@sca.campus", p: "admin123", r: "System Admin" },
+            { e: "student@sca.campus", p: "user123", r: "Student" },
+            { e: "faculty@sca.campus", p: "user123", r: "Faculty" }
+        ];
+        const next = demos[demoIndex % demos.length];
+        setEmail(next.e);
+        setPassword(next.p);
         setIsRegistering(false);
-        toast({ title: "Admin Sync", description: "System admin credentials synchronized." });
+        setDemoIndex(prev => prev + 1);
+        toast({ title: `${next.r} Sync`, description: `${next.r} credentials synchronized.` });
     };
 
     const handleLogin = async (e: React.FormEvent) => {
@@ -248,23 +257,27 @@ const Auth = () => {
                         </button>
                     </div>
 
-                    <form onSubmit={isRegistering ? handleRegister : handleLogin} aria-label={isRegistering ? "Registration Form" : "Login Form"} className="space-y-6 min-h-[420px]">
+                    <form
+                        onSubmit={isRegistering ? handleRegister : handleLogin}
+                        aria-label={isRegistering ? "Registration Form" : "Login Form"}
+                        className="space-y-6 transition-all duration-500 ease-in-out"
+                    >
                         {/* Network Interface Toggle (Login only) */}
                         {!isRegistering && (
-                            <div className="p-6 rounded-[32px] bg-slate-50 border border-slate-200/60 shadow-inner transition-all duration-300 animate-in fade-in slide-in-from-top-2">
-                                <div className="flex items-center justify-between mb-4">
-                                    <div className="space-y-1">
+                            <div className="p-5 rounded-[32px] bg-slate-50 border border-slate-200/60 shadow-inner h-[130px] flex flex-col justify-center transition-all duration-300 animate-in fade-in slide-in-from-top-2">
+                                <div className="flex items-center justify-between mb-3">
+                                    <div className="space-y-0.5">
                                         <Label htmlFor="mock-toggle" className="text-sm font-semibold text-slate-900 flex items-center gap-2 cursor-pointer">
-                                            <Globe className="w-4 h-4" /> Data Mode
+                                            <Globe className="w-4 h-4 text-primary" /> Data Mode
                                         </Label>
-                                        <p className="text-xs text-slate-500">Switch between demo data and live campus data</p>
+                                        <p className="text-[10px] text-slate-500">Demo vs Live Campus Node</p>
                                     </div>
                                     <Switch
                                         id="mock-toggle"
                                         checked={!useMockData}
                                         onCheckedChange={(c) => setUseMockData(!c)}
                                         aria-label="Toggle between mock and production data"
-                                        className="data-[state=checked]:bg-primary"
+                                        className="data-[state=checked]:bg-primary h-5 w-9 scale-90"
                                     />
                                 </div>
 
@@ -289,33 +302,32 @@ const Auth = () => {
 
                         {/* Registration: Role Selector */}
                         {isRegistering && (
-                            <div className="p-6 rounded-[32px] bg-slate-50 border border-slate-200/60 shadow-inner transition-all duration-300 animate-in fade-in slide-in-from-top-2">
-                                <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3 block">Select Your Role</Label>
+                            <div className="p-5 rounded-[32px] bg-slate-50 border border-slate-200/60 shadow-inner h-[130px] flex flex-col justify-center transition-all duration-300 animate-in fade-in slide-in-from-top-2">
+                                <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2 block text-center">Identity Role</Label>
                                 <div className="grid grid-cols-2 gap-3">
                                     <button
                                         type="button"
                                         onClick={() => setRole('student')}
                                         className={cn(
-                                            "p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2",
-                                            role === 'student' ? "border-primary bg-primary/5" : "border-slate-200 hover:border-slate-300"
+                                            "py-2 px-4 rounded-xl border-2 transition-all flex items-center justify-center gap-2",
+                                            role === 'student' ? "border-primary bg-primary/5 text-primary" : "border-slate-200 hover:border-slate-300 text-slate-400"
                                         )}
                                     >
-                                        <GraduationCap className={cn("w-6 h-6", role === 'student' ? "text-primary" : "text-slate-400")} />
+                                        <GraduationCap className="w-4 h-4" />
                                         <span className="text-[10px] font-black uppercase tracking-widest">Student</span>
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => setRole('faculty')}
                                         className={cn(
-                                            "p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2",
-                                            role === 'faculty' ? "border-primary bg-primary/5" : "border-slate-200 hover:border-slate-300"
+                                            "py-2 px-4 rounded-xl border-2 transition-all flex items-center justify-center gap-2",
+                                            role === 'faculty' ? "border-primary bg-primary/5 text-primary" : "border-slate-200 hover:border-slate-300 text-slate-400"
                                         )}
                                     >
-                                        <Briefcase className={cn("w-6 h-6", role === 'faculty' ? "text-primary" : "text-slate-400")} />
+                                        <Briefcase className="w-4 h-4" />
                                         <span className="text-[10px] font-black uppercase tracking-widest">Faculty</span>
                                     </button>
                                 </div>
-                                <p className="text-[9px] text-slate-400 mt-3 text-center">Admin accounts are auto-provisioned and cannot be self-registered.</p>
                             </div>
                         )}
 
@@ -367,13 +379,13 @@ const Auth = () => {
 
                             {/* Department (Registration only) */}
                             {isRegistering && (
-                                <div className="space-y-2 transition-all duration-300 animate-in fade-in slide-in-from-top-2">
-                                    <Label htmlFor="department" className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-4">Department</Label>
+                                <div className="space-y-1.5 transition-all duration-500 animate-in fade-in slide-in-from-top-1">
+                                    <Label htmlFor="department" className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-4">Node Department</Label>
                                     <Select value={department} onValueChange={setDepartment}>
-                                        <SelectTrigger className="h-14 bg-white border-2 border-slate-100 rounded-2xl font-bold text-sm">
+                                        <SelectTrigger className="h-14 bg-white border-2 border-slate-100 rounded-2xl font-bold text-sm focus:ring-primary/20">
                                             <SelectValue placeholder="Select Department" />
                                         </SelectTrigger>
-                                        <SelectContent>
+                                        <SelectContent className="rounded-2xl border-slate-100">
                                             <SelectItem value="Computer Science">Computer Science</SelectItem>
                                             <SelectItem value="Information Technology">Information Technology</SelectItem>
                                             <SelectItem value="Engineering">Engineering</SelectItem>

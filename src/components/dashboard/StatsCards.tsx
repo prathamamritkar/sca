@@ -4,11 +4,11 @@ import { TrendingUp, Zap, Award, Users } from "lucide-react";
 interface StatsCardsProps {
   totalActions: number;
   totalCredits: number;
-  averageConfidence: number;
+  averageFidelity: number;
   uniqueLocations: number;
 }
 
-const StatsCards = ({ totalActions, totalCredits, averageConfidence, uniqueLocations }: StatsCardsProps) => {
+const StatsCards = ({ totalActions, totalCredits, averageFidelity, uniqueLocations }: StatsCardsProps) => {
   const stats = [
     {
       label: "Total Actions Detected",
@@ -25,9 +25,9 @@ const StatsCards = ({ totalActions, totalCredits, averageConfidence, uniqueLocat
       color: "text-success",
     },
     {
-      label: "Detection Accuracy",
-      value: `${averageConfidence}%`,
-      change: averageConfidence >= 90 ? "Excellent" : "Good",
+      label: "Fidelity Index (Avg)",
+      value: `${averageFidelity}%`,
+      change: averageFidelity >= 90 ? "Excellent" : "Good",
       icon: TrendingUp,
       color: "text-accent",
     },

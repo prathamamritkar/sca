@@ -3,7 +3,11 @@ Environment Configuration Manager for SCA Backend
 Handles environment-specific settings and validates configuration
 """
 import os
+from dotenv import load_dotenv
 from typing import Literal
+
+# Load environment variables from .env file
+load_dotenv()
 
 EnvironmentType = Literal['development', 'staging', 'production']
 DataMode = Literal['mock', 'production']
@@ -34,7 +38,8 @@ class Config:
     # Blockchain
     BLOCKCHAIN_RPC_URL = os.environ.get('BLOCKCHAIN_RPC_URL', 'https://rpc-amoy.polygon.technology/')
     BLOCKCHAIN_PRIVATE_KEY = os.environ.get('BLOCKCHAIN_PRIVATE_KEY')
-    CONTRACT_ADDRESS = os.environ.get('CONTRACT_ADDRESS')
+    # Support both naming conventions
+    CONTRACT_ADDRESS = os.environ.get('CONTRACT_ADDRESS') or os.environ.get('VITE_CONTRACT_ADDRESS')
     
     # Department
     TARGET_DEPT = os.environ.get('TARGET_DEPT', 'CS_DEPARTMENT')
@@ -126,7 +131,6 @@ class DevelopmentConfig(Config):
     """Development-specific configuration"""
     NODE_ENV = 'development'
     FLASK_DEBUG = True
-    DATA_MODE = 'mock'
 
 
 class ProductionConfig(Config):

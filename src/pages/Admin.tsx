@@ -43,6 +43,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,7 +60,7 @@ interface PendingAction {
   action: string;
   location: string;
   timestamp: string;
-  confidence: number;
+  fidelity: number;
   image_url?: string;
   video_url?: string;
   status?: string;
@@ -76,6 +77,15 @@ interface UserRecord {
   last_login?: string;
 }
 
+interface DashboardStats {
+  pending_count: number;
+  hc_count: number;
+  avg_fidelity: number;
+  avg_accuracy?: number;
+  total_verified: number;
+  db_size_kb: number;
+}
+
 const Admin = () => {
   const [activeTab, setActiveTab] = useState<'audit' | 'users'>('audit');
   const [pendingActions, setPendingActions] = useState<PendingAction[]>([]);
@@ -85,10 +95,12 @@ const Admin = () => {
   const [selectedAction, setSelectedAction] = useState<PendingAction | null>(null);
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [globalStats, setGlobalStats] = useState({
+  // Dashboard stats state
+  const [globalStats, setGlobalStats] = useState<DashboardStats>({
     pending_count: 0,
     hc_count: 0,
-    avg_accuracy: 0,
+    avg_fidelity: 0, // Explicitly using fidelity
+    avg_accuracy: 0, // Initialize with 0 for backward drift
     total_verified: 0,
     db_size_kb: 0
   });
@@ -110,14 +122,14 @@ const Admin = () => {
       setUsers(JSON.parse(savedUsers));
     } else {
       const mockEvents: PendingAction[] = [
-        { id: 101, action: "light_off", location: "Lab 3", timestamp: new Date().toISOString(), confidence: 0.72 },
-        { id: 102, action: "fan_off", location: "Library", timestamp: new Date(Date.now() - 3600000).toISOString(), confidence: 0.88 },
-        { id: 103, action: "ac_off", location: "Conf. Room", timestamp: new Date(Date.now() - 7200000).toISOString(), confidence: 0.81 },
-        { id: 104, action: "suspicious_energy", location: "Gym", timestamp: new Date(Date.now() - 10800000).toISOString(), confidence: 0.45 },
-        { id: 105, action: "unauthorized_entry", location: "Admin Block", timestamp: new Date(Date.now() - 14400000).toISOString(), confidence: 0.92 },
+        { id: 101, action: "light_off", location: "Lab 3", timestamp: new Date().toISOString(), fidelity: 0.72 },
+        { id: 102, action: "fan_off", location: "Library", timestamp: new Date(Date.now() - 3600000).toISOString(), fidelity: 0.88 },
+        { id: 103, action: "ac_off", location: "Conf. Room", timestamp: new Date(Date.now() - 7200000).toISOString(), fidelity: 0.81 },
+        { id: 104, action: "suspicious_energy", location: "Gym", timestamp: new Date(Date.now() - 10800000).toISOString(), fidelity: 0.45 },
+        { id: 105, action: "unauthorized_entry", location: "Admin Block", timestamp: new Date(Date.now() - 14400000).toISOString(), fidelity: 0.92 },
       ];
       const mockUsers: UserRecord[] = [
-        { user_id: 1, email: "admin@sca.campus", name: "System Admin", role: "admin", department: "IT", is_active: true, created_at: new Date().toISOString() },
+        { user_id: 1, email: "admin@sca.campus", name: "System Administrator", role: "admin", department: "IT", is_active: true, created_at: new Date().toISOString() },
         { user_id: 2, email: "john@student.com", name: "John Doe", role: "student", department: "CS", is_active: true, created_at: new Date().toISOString() },
         { user_id: 3, email: "dr.rao@faculty.com", name: "Dr. Rao", role: "faculty", department: "Physics", is_active: true, created_at: new Date().toISOString() },
       ];
@@ -139,7 +151,7 @@ const Admin = () => {
           action: e.action_detected || e.action_type || 'unknown',
           location: e.room_id || 'Unknown',
           timestamp: e.timestamp,
-          confidence: e.overall_confidence || 0.75,
+          fidelity: e.overall_confidence || 0.75,
           video_url: e.video_file ? (e.video_file.startsWith('http') ? e.video_file : `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/uploads/${e.video_file}`) : undefined
         })));
       }
@@ -174,7 +186,7 @@ const Admin = () => {
         setGlobalStats({
           pending_count: result.data.pending_count || 0,
           hc_count: result.data.hc_count || 0,
-          avg_accuracy: result.data.avg_accuracy || 0,
+          avg_fidelity: result.data.avg_fidelity || result.data.avg_accuracy || 0,
           total_verified: result.data.total_verified || 0,
           db_size_kb: result.data.db_size_kb || 0
         });
@@ -215,37 +227,6 @@ const Admin = () => {
     }
   };
 
-  const handleBulkApprove = async () => {
-    const hcCandidates = pendingActions.filter(a => a.confidence >= 0.8);
-    const hcCount = hcCandidates.length;
-
-    if (hcCount === 0) {
-      toast({ title: "No HC Candidates", description: "No pending signals meet the 0.8 fidelity threshold." });
-      return;
-    }
-
-    setIsProcessing('bulk');
-    try {
-      if (!useMockData) {
-        const result = await cvApi.bulkVerifyEvents(0.8);
-        if (!result.success) throw new Error(result.error || 'Bulk verification failed');
-      }
-
-      const newActions = pendingActions.filter(a => a.confidence < 0.8);
-      setPendingActions(newActions);
-      if (useMockData) saveMockState(newActions, users);
-
-      loadGlobalStats();
-      toast({
-        title: "Bulk Approval Executed",
-        description: `Successfully verified all high-fidelity signals (${hcCount} records).`
-      });
-    } catch (error: any) {
-      toast({ title: "Bulk Audit Failure", description: error.message, variant: "destructive" });
-    } finally {
-      setIsProcessing(null);
-    }
-  };
 
   const handleUpdateUser = async (userId: number, updates: Partial<UserRecord>) => {
     setIsProcessing(`user-${userId}`);
@@ -272,15 +253,48 @@ const Admin = () => {
       setIsProcessing(null);
     }
   };
+  const handleExportLocal = () => {
+    const dataToExport = activeTab === 'audit' ? filteredActions : users;
+    if (dataToExport.length === 0) return;
 
-  const handleExport = async () => {
+    let headers: string[] = [];
+    let rows: any[] = [];
+
+    if (activeTab === 'audit') {
+      headers = ["Signal_ID", "Timestamp", "Action", "Location", "Fidelity"];
+      rows = filteredActions.map(a => [a.id, a.timestamp, a.action, a.location, `${Math.round(a.fidelity * 100)}%`]);
+    } else {
+      headers = ["User_ID", "Name", "Email", "Role", "Department", "Status"];
+      rows = users.map(u => [u.user_id, u.name, u.email, u.role, u.department, u.is_active ? 'Active' : 'Disabled']);
+    }
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(r => r.join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `SCA_Admin_View_${activeTab.toUpperCase()}_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    toast({ title: "View Exported", description: `Current ${activeTab} context serialized locally.` });
+  };
+
+  const handleFullExport = async (type: 'events' | 'users' = 'events') => {
     if (useMockData) {
-      toast({ title: "Export Unavailable", description: "Ledger export is disabled in Sandbox mode." });
+      toast({ title: "Export Unavailable", description: "Node serialization disabled in Sandbox mode." });
       return;
     }
     try {
-      await cvApi.exportEvents();
-      toast({ title: "Export Complete", description: "Audit log has been serialized to CSV." });
+      if (type === 'events') {
+        await cvApi.exportEvents();
+        toast({ title: "Ledger Exported", description: "Official verified audit log downloaded." });
+      } else {
+        await cvApi.exportUsers();
+        toast({ title: "Census Exported", description: "Total node operator log downloaded." });
+      }
     } catch (error: any) {
       toast({ title: "Export Failed", description: error.message, variant: "destructive" });
     }
@@ -308,9 +322,9 @@ const Admin = () => {
 
   const stats = useMemo(() => ({
     inQueue: pendingActions.length || 0,
-    highConfidence: pendingActions.filter(a => a.confidence >= 0.8).length || 0,
-    avgConfidence: pendingActions.length > 0
-      ? (pendingActions.reduce((s, a) => s + (a.confidence || 0), 0) / pendingActions.length * 100).toFixed(2)
+    highConfidence: pendingActions.filter(a => a.fidelity >= 0.8).length || 0,
+    avgFidelity: pendingActions.length > 0
+      ? (pendingActions.reduce((s, a) => s + (a.fidelity || 0), 0) / pendingActions.length * 100).toFixed(2)
       : "0.00"
   }), [pendingActions]);
 
@@ -318,9 +332,9 @@ const Admin = () => {
     <DashboardLayout>
       <div className="page-section">
         {/* SOC-Themed Header */}
-        <div className="section-header md:flex-row md:items-center md:justify-between">
+        <div className="section-header">
           <div className="space-y-4">
-            <div className="flex items-center gap-3">
+            <div className="page-title-group">
               <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center border border-slate-700 shadow-2xl shadow-slate-200">
                 <Shield className="w-5 h-5 text-primary" />
               </div>
@@ -331,8 +345,8 @@ const Admin = () => {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex bg-slate-100 p-1 rounded-2xl mr-4">
+          <div className="section-actions">
+            <div className="flex bg-slate-100 p-1 rounded-2xl">
               <button
                 onClick={() => { setActiveTab('audit'); setSearchQuery(""); }}
                 className={cn("px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", activeTab === 'audit' ? "bg-white shadow-sm text-slate-900" : "text-slate-400 hover:text-slate-600")}
@@ -347,67 +361,71 @@ const Admin = () => {
               </button>
             </div>
 
-            <Button onClick={handleExport} variant="outline" className="h-10 px-5 rounded-xl border-slate-200 font-bold text-[10px] uppercase tracking-widest bg-white shadow-sm hover:bg-slate-50">
-              <Download className="w-3.5 h-3.5 mr-2" /> Export Log
-            </Button>
+            <Select onValueChange={(v) => {
+              if (v === "local") handleExportLocal();
+              else if (v === "full_events") handleFullExport('events');
+              else if (v === "full_users") handleFullExport('users');
+            }}>
+              <SelectTrigger className="h-10 px-5 rounded-xl border-slate-200 font-black text-[10px] uppercase tracking-widest bg-white shadow-sm hover:bg-slate-50 w-52 whitespace-nowrap">
+                <div className="flex items-center gap-2">
+                  <Download className="w-3.5 h-3.5" />
+                  <SelectValue placeholder="EXPORT DATA" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="local">Current View</SelectItem>
+                <SelectItem value="full_events">Verified Ledger</SelectItem>
+                <SelectItem value="full_users">User Census</SelectItem>
+              </SelectContent>
+            </Select>
 
-            <Button onClick={() => activeTab === 'audit' ? loadPendingActions() : loadUsers()} disabled={isLoading} variant="outline" className="h-10 px-5 rounded-xl border-slate-200 font-bold text-[10px] uppercase tracking-widest bg-white shadow-sm hover:bg-slate-50">
-              <RefreshCw className={cn("w-3.5 h-3.5 mr-2", isLoading && "animate-spin")} /> Refresh
-            </Button>
-
-            {activeTab === 'audit' && (
-              <Button
-                onClick={handleBulkApprove}
-                disabled={!!isProcessing || isLoading || stats.highConfidence === 0}
-                className="h-10 px-6 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest shadow-xl shadow-slate-200 disabled:opacity-50"
-              >
-                {isProcessing === 'bulk' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <>Bulk Approve ({useMockData ? stats.highConfidence : globalStats.hc_count})</>}
-              </Button>
-            )}
           </div>
         </div>
 
         {/* System Governance */}
         <div className="stat-grid">
           {[
-            { label: "Queue Depth", value: useMockData ? stats.inQueue : (globalStats.pending_count || 0), icon: <Clock className="w-4 h-4" />, color: "text-slate-900" },
-            { label: "HC Reliability", value: useMockData ? stats.highConfidence : (globalStats.hc_count || 0), icon: <UserCheck className="w-4 h-4" />, color: "text-success" },
-            { label: "Signal Fidelity", value: `${useMockData ? stats.avgConfidence : (globalStats.avg_accuracy || 0)}%`, icon: <Activity className="w-4 h-4" />, color: "text-primary" },
-            { label: "Ledger Volume", value: `${(globalStats.db_size_kb || 0).toLocaleString()} KB`, icon: <Database className="w-4 h-4" />, color: "text-slate-900" }
+            { label: "Queue Depth", value: useMockData ? stats.inQueue : (globalStats.pending_count || 0), icon: <Clock className="w-5 h-5" />, color: "text-slate-900", bg: "bg-slate-50" },
+            { label: "Trusted Signals", value: useMockData ? stats.highConfidence : (globalStats.hc_count || 0), icon: <UserCheck className="w-5 h-5" />, color: "text-success", bg: "bg-success/5" },
+            { label: "Network Fidelity", value: `${useMockData ? stats.avgFidelity : (globalStats.avg_fidelity || 0)}%`, icon: <Activity className="w-5 h-5" />, color: "text-primary", bg: "bg-primary/5" },
+            { label: "Ledger Volume", value: `${(globalStats.db_size_kb || 0).toLocaleString()} KB`, icon: <Database className="w-5 h-5" />, color: "text-slate-900", bg: "bg-slate-50" }
           ].map((stat, i) => (
-            <Card key={i} className="p-5 bg-slate-50/50 border-slate-200/50 rounded-[32px] group hover:border-primary/20 transition-all">
+            <Card key={i} className={cn("p-6 border border-slate-100 rounded-[32px] group hover:border-primary/20 hover:bg-white hover:-translate-y-1 hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300", stat.bg)}>
               <div className="flex items-center justify-between mb-4">
-                <div className="p-2 rounded-xl bg-white border border-slate-200/50 text-slate-400 group-hover:text-primary transition-colors">
+                <div className="p-2.5 rounded-xl bg-white border border-slate-100 text-slate-300 group-hover:text-primary group-hover:scale-110 transition-all duration-300">
                   {stat.icon}
                 </div>
               </div>
               <div className="space-y-1">
-                <div className={cn("text-2xl font-black tracking-tighter", stat.color)}>{stat.value}</div>
-                <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">{stat.label}</div>
+                <div className={cn("text-3xl font-black tracking-tighter transition-colors duration-300", stat.color)}>{stat.value}</div>
+                <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400 group-hover:text-slate-500 transition-colors">{stat.label}</div>
               </div>
             </Card>
           ))}
         </div>
 
-        {/* Governance Hub */}
-        <div className="page-section gap-[var(--space-md)]">
-          <div className="section-header border-none pb-0 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400">
-              {activeTab === 'audit' ? <><Shield className="w-4 h-4" /> Audit Queue</> : <><Users className="w-4 h-4" /> Node Operators</>}
+        <div className="space-y-6">
+          <div className="section-header border-none pb-0 mb-0">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors">
+                {activeTab === 'audit' ? <Shield className="w-5 h-5 text-slate-400" /> : <Users className="w-5 h-5 text-slate-400" />}
+              </div>
+              <h2 className="text-xl font-black tracking-tighter text-slate-900 uppercase">
+                {activeTab === 'audit' ? "Audit Queue" : "Node Operators"}
+              </h2>
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
+            <div className="flex items-center gap-2">
+              <div className="relative group">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 group-focus-within:text-primary transition-colors z-10" />
                 <input
                   type="text"
-                  placeholder={activeTab === 'audit' ? "Filter segments..." : "Search operators..."}
+                  placeholder={activeTab === 'audit' ? "Lookup Signal ID..." : "Search Node Handle..."}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20 w-full md:w-64 transition-all"
+                  className="h-10 w-full md:w-64 rounded-xl bg-slate-50 border-none font-bold text-xs pl-10 focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                 />
               </div>
-              <Badge variant="outline" className="h-5 px-3 text-[9px] font-bold tracking-tighter border-slate-200 text-slate-400 hidden sm:flex">SYNC_OK</Badge>
             </div>
           </div>
 
@@ -415,7 +433,7 @@ const Admin = () => {
             {isLoading ? (
               <div className="py-20 text-center space-y-4">
                 <Loader2 className="w-10 h-10 animate-spin text-slate-200 mx-auto" />
-                <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Polling Node Operators...</p>
+                <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Compiling Governance Data...</p>
               </div>
             ) : activeTab === 'audit' ? (
               filteredActions.length === 0 ? (
@@ -438,13 +456,13 @@ const Admin = () => {
                           <span className="text-base font-black tracking-tighter text-slate-900">{(action.action || 'UNKNOWN').replace(/_/g, ' ').toUpperCase()}</span>
                           <Badge className={cn(
                             "h-5 text-[9px] font-bold uppercase tracking-tighter",
-                            action.confidence >= 0.8 ? "bg-success/10 text-success border-success/20" : "bg-warning/10 text-warning border-warning/20"
+                            action.fidelity >= 0.8 ? "bg-success/10 text-success border-success/20" : "bg-warning/10 text-warning border-warning/20"
                           )}>
-                            {Math.round(action.confidence * 100)}% Match
+                            {Math.round(action.fidelity * 100)}% Fidelity
                           </Badge>
                         </div>
                         <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-[11px] font-bold text-slate-500 uppercase tracking-widest opacity-60">
-                          <span className="flex items-center gap-1.5">ID: #{action.id}</span>
+                          <span className="flex items-center gap-1.5">ID: {action.id}</span>
                           <span className="flex items-center gap-1.5"><Clock className="w-3 h-3" /> {new Date(action.timestamp).toLocaleTimeString()}</span>
                           <span className="flex items-center gap-1.5"><Eye className="w-3 h-3" /> Station: {action.location}</span>
                         </div>
@@ -568,13 +586,15 @@ const Admin = () => {
           <div className="h-3 w-full bg-slate-900" />
           <div className="p-8 md:p-12 overflow-y-auto max-h-[80vh] custom-scrollbar">
             <DialogHeader className="mb-8">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
-                  <Eye className="w-5 h-5 text-slate-900" />
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-slate-900 flex items-center justify-center">
+                  <Eye className="w-6 h-6 text-primary" />
                 </div>
-                <DialogTitle className="text-2xl font-black tracking-tighter text-slate-900 uppercase">Visual Signal Audit</DialogTitle>
+                <div>
+                  <DialogTitle className="text-3xl font-black tracking-tighter text-slate-900 uppercase">Visual Audit</DialogTitle>
+                  <DialogDescription className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Signal Origin Analysis #TX_{selectedAction?.id}</DialogDescription>
+                </div>
               </div>
-              <DialogDescription className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Signal Origin Analysis #TX_{selectedAction?.id}</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-8">
@@ -613,13 +633,15 @@ const Admin = () => {
                 </div>
                 <div className="p-6 bg-slate-50 rounded-3xl space-y-1 min-w-[200px] border border-slate-100 flex flex-col justify-center text-center snap-center">
                   <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Fidelity Threshold</div>
-                  <div className="text-xs font-black text-slate-900 leading-tight">{(selectedAction?.confidence || 0.5) * 100}% Verification</div>
+                  <div className="text-xs font-black text-slate-900 leading-tight">{(selectedAction?.fidelity || 0.5) * 100}% Verification</div>
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 pt-6 border-t border-slate-100 mt-6 pt-6">
-                <Button variant="ghost" onClick={() => setIsVideoModalOpen(false)} className="font-bold text-xs uppercase tracking-widest h-12 px-8">Close Audit</Button>
-                <Button onClick={() => { handleAudit(selectedAction!.id, 'verified'); setIsVideoModalOpen(false); }} className="bg-slate-900 text-white font-black text-xs uppercase tracking-widest h-12 px-10 rounded-2xl shadow-2xl shadow-slate-200">
+              <div className="flex flex-col sm:flex-row justify-end gap-3 pt-6 border-t border-slate-100">
+                <Button variant="ghost" onClick={() => setIsVideoModalOpen(false)} className="h-16 rounded-[28px] border-2 border-slate-100 font-black text-xs uppercase tracking-[0.3em] text-slate-300 hover:text-slate-900 hover:bg-slate-50 transition-all flex-1">
+                  Close Audit
+                </Button>
+                <Button onClick={() => { handleAudit(selectedAction!.id, 'verified'); setIsVideoModalOpen(false); }} className="h-16 rounded-[28px] bg-slate-900 text-white font-black text-xs uppercase tracking-widest shadow-2xl shadow-slate-200 flex-1">
                   Confirm Signal →
                 </Button>
               </div>

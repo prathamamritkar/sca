@@ -1,78 +1,8 @@
 # SCA - Sustainable Campus Automation
 
-**AI-Powered Campus Energy Monitoring with Blockchain-Verified Rewards**
+**AI-Powered Campus Energy Monitoring with Frictionless Rewards**
 
-An integrated full-stack application combining a React dashboard with a Python computer vision backend for detecting and rewarding sustainable energy-saving actions on university campuses.
-
----
-
-## 📖 User Guide & Walkthrough
-
-Welcome to the **Sustainable Campus Automation (SCA)** platform. This section provides a comprehensive overview of how to navigate the system, simulate energy-saving events, and manage roles.
-
-### 🔐 Authentication & Demo Users
-
-The platform uses a role-based access control system. You can use the following demo credentials to explore different perspectives:
-
-| Role | Email | Password | Primary Purpose |
-| :--- | :--- | :--- | :--- |
-| **Admin** | `admin@sca.campus` | `admin123` | System audit, user management, and bulk verification. |
-| **Student** | `pratham@sca.campus` | `user123` | View personal dashboard, transfer credits, and track rankings. |
-| **Faculty** | `dr.rao@sca.campus` | `user123` | Monitor department efficiency and verify local classroom events. |
-
-> **💡 Quick Tip**: On the Login page, click the **"Demo Login"** button at the bottom to automatically fill in the Admin credentials.
-
-### 🧪 Simulation Modes: Sandbox vs. Real
-
-SCA is designed to work in two distinct modes to facilitate both development and actual deployment.
-
-#### 🏜️ Sandbox (Mock Data)
-- **What it is**: A purely frontend-driven simulation.
-- **How to enable**: Toggle the **"Use Mock Data"** switch in the Dashboard header.
-- **Why use it**: 
-  - Test the UI without a running backend.
-  - Explore the flow of uploading a video and seeing "detected" actions immediately.
-  - Generating simulated detections for training purposes.
-
-#### 🏢 Real-Time (Production API)
-- **What it is**: Integration with the Flask backend, YOLOv8 AI model, and SQLite database.
-- **How to enable**: Toggle **"Use Mock Data"** to **OFF**. Ensure the connection status shows **"Live Data"**.
-- **Process**:
-  1. Upload a video file (MP4/MOV).
-  2. Click **"Start AI Detection"**.
-  3. The backend runs the YOLOv8 model to identify persons, devices, and actions.
-  4. Real events are logged into the database and credits are prepared for auditing.
-
-### 📊 Core Modules
-
-#### 🛠️ Dashboard (The Observation Deck)
-- **Video Feed**: Upload CCTV clips to simulate real-time monitoring.
-- **Inference Engine**: Watch as the AI detects "AC Off" and "Light Off" events.
-- **Live Metrics**: Track your current session accuracy and total credits earned.
-
-#### 📜 Activity Log (The Ledger)
-- View a historical record of all verified events.
-- **Audit Reports**: Click on any event to see detailed metadata, including the room ID, confidence score, and energy impact.
-- **Transparency**: Every credit minted is linked to a visual evidence block.
-
-#### 🏆 Leaderboard (The Impact Grid)
-- See how departments and individuals stack up.
-- **Search & Filter**: Find specific users or filter by department (e.g., "Computer Science").
-- **Competitions**: Top earners contribute to UN SDGs and earn campus-wide recognition.
-
-#### 💳 Wallet (Asset Hub)
-- **Credit Balance**: Real-time view of your EcoPoints (XP).
-- **History**: Trace every reward back to the specific energy-saving action.
-- **P2P Transfer**: Send credits to other students using their email IDs. This is useful for group projects or incentivizing clean habits among peers.
-
-### 🛡️ Administration Center
-
-Accessed via the **Admin** link in the sidebar (Admin only).
-
-1. **Audit Center**: View "Pending" events logged by the AI. You can manually **Verify** or **Reject** them.
-2. **Bulk Approve**: Use the **High Confidence Approve** button to verify all events with >80% accuracy in one click.
-3. **User Management**: Change user roles or deactivate accounts.
-4. **Network Health**: Monitor the database size and system-wide average accuracy.
+An integrated full-stack application combining a React dashboard with a Python computer vision backend for detecting, verifying, and rewarding sustainable energy-saving actions on university campuses.
 
 ---
 
@@ -84,9 +14,8 @@ Accessed via the **Admin** link in the sidebar (Admin only).
 - **pip** (Python package manager)
 
 ### 1. Frontend Setup
-
 ```bash
-# Navigate to project
+# Navigate to project root
 cd sca
 
 # Install dependencies
@@ -98,9 +27,8 @@ npm run dev
 Frontend will be available at: **http://localhost:5173**
 
 ### 2. Backend Setup
-
 ```bash
-# Navigate to backend
+# Navigate to backend directory
 cd backend
 
 # Install dependencies
@@ -113,83 +41,102 @@ Backend API will be available at: **http://localhost:5000**
 
 ---
 
+## ⚡ Short Walkthrough (User Guide)
+
+1.  **Login**: Use the **"Demo Login"** button on the Auth page to sign in as **System Administrator** (`admin@sca.campus`).
+2.  **Dashboard**: Navigate to the Dashboard.
+3.  **Select Mode**: Toggle **"Data Mode"** to OFF for **Production (Live API)** or ON for **Sandbox (Mock Data)**.
+4.  **Simulate Event**: Upload a CCTV video clip (e.g., typically found in `backend/test_videos/`).
+5.  **Analysis**: Click **"Start Neural Inference"**. The AI will detect actions (e.g., "Lights Off").
+6.  **Results**: View the **Fidelity Index** and earned **Credits** in the "Session Impact" sidebar.
+
+---
+
+## 📖 Comprehensive Functionality Guide
+
+### 🔐 Authentication & Roles
+The platform employs a secure JWT-based Role-Based Access Control (RBAC) system.
+
+| Role | Email | Password | Access Rights |
+| :--- | :--- | :--- | :--- |
+| **System Admin** | `admin@sca.campus` | `admin123` | Full access: Audit Queue, User Management, Data Export. |
+| **Student** | `student@sca.campus` | `user123` | Personal Dashboard, Wallet, P2P Transfers, Leaderboard. |
+| **Faculty** | `faculty@sca.campus` | `user123` | Departmental Analytics, Class Verification, Leaderboard. |
+
+### 🛠️ Dashboard (The Central Command)
+- **Neural Link**: Upload video feeds to the YOLOv8 computer vision engine.
+- **Live Stream Refinement**: Filter detection results by action type (e.g., "Lights Off", "AC Off").
+- **Session Impact**: Real-time ticker showing **Credits Earned** and **Energy Saved (Watts)**.
+- **Fidelity Index**: A confidence metric (0-100%) indicating the reliability of the AI's detection.
+
+### 📜 Network Ledger (Events)
+- **Audit Trails**: A searchable history of every detected sustainability signal.
+- **Evidence Block**: Click any row to view the "Audit Report" containing the source video evidence and metadata.
+- **Filter & Search**: standardized search bars allow finding specific "Pulse IDs" or locations.
+
+### 🏆 Network Census (Leaderboard)
+- **Rankings**: View top-performing "Nodes" (Users) based on verified credits.
+- **Metrics**: "Fidelity" scores tracks how accurate a user's submissions are.
+- **Profile Modes**: Switch between "Audit Queue" (Admin view) and "Node Operators" (User list).
+
+### 💳 Wallet (Asset Management)
+- **Blockchain Integration**: Connect **MetaMask** to sync with the Sepolia Testnet.
+- **Bridge Credits**: Mint your internal database credits into on-chain `SCC` tokens.
+- **Dispatch Assets**: Peer-to-peer credit transfer system. Admin can dispatch assets to students/faculty.
+- **Identity Sync**: Verifies if your active Web3 wallet matches your registered account.
+
+### 🛡️ Administration Center
+Exclusive to System Administrators.
+1.  **Audit Queue**: Review flagged low-fidelity events. Manually **Verify** or **Reject**.
+2.  **User Management**: Reset passwords, deactivate users (`is_active` flags), or update roles.
+3.  **Export Data**: Download CSV reports for "Full Events" or "User Census".
+4.  **Bulk Actions**: "High Fidelity Approval" to instantly verify all safe events >80% fidelity.
+
+---
+
+## 🧪 Simulation Modes
+
+### 🏜️ Sandbox (Mock Data)
+- **Purpose**: UI testing and demoing without backend dependencies.
+- **Behavior**: Generates randomized detection results and wallet transactions.
+- **Visuals**: Identified by an "Amber/Orange" connection status.
+
+### 🏢 Production (Mainnet)
+- **Purpose**: Real-world deployment.
+- **Behavior**: Connects to the local Python Flask API. Uses **YOLOv8** for inference and **SQLite** for persistence.
+- **Visuals**: Identified by a "Green" connection status ("Live Data").
+
+---
+
 ## 🏗️ Project Structure
 
 ```
 sca/
 ├── src/                          # React Frontend
-│   ├── components/               # UI Components
-│   ├── pages/                    # Page Components
-│   │   ├── Dashboard.tsx         # AI Detection Dashboard
-│   │   ├── Leaderboard.tsx       # Sustainability Rankings
-│   │   ├── Events.tsx            # Activity Log
-│   │   ├── Wallet.tsx            # Blockchain Credits
-│   │   └── Admin.tsx             # Administration
-│   ├── services/                 # API Services
-├── backend/                      # Python CV Module
-│   ├── app.py                    # Flask REST API
-│   ├── cv_processor.py           # YOLO-based Computer Vision
-│   ├── database.py               # SQLAlchemy Models
-│   ├── yolov8n.pt                # YOLO Model Weights
-└── public/                       # Static Assets
+│   ├── components/               # Reusable UI (Cards, Badges, Charts)
+│   ├── pages/                    # Core Route Views (Dashboard, Admin, etc.)
+│   ├── services/                 # Axios API wrappers
+│   └── store/                    # Zustand State Management (Auth)
+├── backend/                      # Python Server
+│   ├── app.py                    # API Entrypoint
+│   ├── cv_processor.py           # Logic: YOLOv8 + OpenCV
+│   ├── energy_analyzer.py        # Logic: Watts calculation
+│   ├── database.py               # Database ORM (SQLite)
+│   └── outputs/                  # Generated DBs and Face IDs
+└── public/                       # Static Assets & Icons
 ```
-
----
-
-## 📊 Data Flow
-
-```
-    ┌──────────────┐     Upload      ┌──────────────┐
-    │   Browser    │ ───────────────► │   Frontend   │
-    │   (User)     │                 │   (React)    │
-    └──────────────┘                 └──────┬───────┘
-                                            │
-                                            ▼
-                                  ┌─────────────────┐
-                                  │  Flask Backend  │
-                                  │  (Port 5000)    │
-                                  └────────┬────────┘
-                                           │
-                                           ▼
-                                  ┌─────────────────┐
-                                  │  CV Processor   │
-                                  │  (YOLO + OpenCV)│
-                                  └─────────────────┘
-```
-
----
-
-## 🏆 Validated Recognition
-
-- **SPPU Startup Bootcamp '25**: Active Participant • Innovation & Incubation Center
-- **IEEE Inv.Ent Pitch '25**: Regional Finalist • Technical Entrepreneurship
-- **PCCOE Indradhanu '25**: Semifinalist • International Grand Challenge
-- **IIT Delhi Moonshot 6.0**: Quarter Finalist • eDC Disruptive Tech
 
 ---
 
 ## 📚 Tech Stack
-
-### Frontend
-- React 18 + TypeScript
-- Vite (Build Tool)
-- TailwindCSS + shadcn/ui
-- React Query (Data Fetching)
-- React Router (Navigation)
-
-### Backend
-- Python 3.8+
-- Flask + Flask-CORS
-- OpenCV + YOLOv8
-- SQLAlchemy + SQLite
-- NumPy
+- **Frontend**: React 18, TypeScript, TailwindCSS, shadcn/ui, Recharts.
+- **Backend**: Python 3.10+, Flask, OpenCV, Ultralytics YOLOv8.
+- **Database**: SQLite (dev) / PostgreSQL (prod ready).
+- **Blockchain**: Web3.js / Ethers.js (Sepolia Testnet interaction).
 
 ---
 
 ## 📝 License
-
-MIT License - See LICENSE file for details.
-
 **© 2026 SCA - Sustainable Campus Automation**  
-*AI-powered energy solutions for a greener future*  
-*Supporting UN SDGs 11, 12 & 13*
+*AI-powered energy solutions for a greener future.*  
+Supporting UN SDGs 11, 12 & 13.

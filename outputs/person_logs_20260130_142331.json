@@ -1,0 +1,74 @@
+{
+  "total_persons_tracked": 3,
+  "room_id": "CS_LAB_101",
+  "department": "CS",
+  "generated_at": "2026-01-30T14:23:31.772500",
+  "person_logs": {
+    "person_006": {
+      "total_activities": 1,
+      "first_seen": "2026-01-30T14:23:24.062795",
+      "last_seen": "2026-01-30T14:23:24.062795",
+      "activities": [
+        {
+          "timestamp": "2026-01-30T14:23:24.062795",
+          "activity_type": "presence",
+          "room_id": "CS_LAB_101",
+          "details": {
+            "devices_nearby": 0,
+            "action": null
+          }
+        }
+      ]
+    },
+    "person_007": {
+      "total_activities": 1,
+      "first_seen": "2026-01-30T14:23:31.438957",
+      "last_seen": "2026-01-30T14:23:31.438957",
+      "activities": [
+        {
+          "timestamp": "2026-01-30T14:23:31.438957",
+          "activity_type": "presence",
+          "room_id": "CS_LAB_101",
+          "details": {
+            "devices_nearby": 4,
+            "action": null
+          }
+        }
+      ]
+    },
+    "person_008": {
+      "total_activities": 3,
+      "first_seen": "2026-01-30T14:23:31.448985",
+      "last_seen": "2026-01-30T14:23:31.467203",
+      "activities": [
+        {
+          "timestamp": "2026-01-30T14:23:31.448985",
+          "activity_type": "presence",
+          "room_id": "CS_LAB_101",
+          "details": {
+            "devices_nearby": 4,
+            "action": null
+          }
+        },
+        {
+          "timestamp": "2026-01-30T14:23:31.457860",
+          "activity_type": "presence",
+          "room_id": "CS_LAB_101",
+          "details": {
+            "devices_nearby": 4,
+            "action": null
+          }
+        },
+        {
+          "timestamp": "2026-01-30T14:23:31.467203",
+          "activity_type": "presence",
+          "room_id": "CS_LAB_101",
+          "details": {
+            "devices_nearby": 4,
+            "action": null
+          }
+        }
+      ]
+    }
+  }
+}

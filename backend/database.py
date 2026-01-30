@@ -552,18 +552,22 @@ class Database:
             # Weekly threshold
             one_week_ago = datetime.now() - timedelta(days=7)
             
-            # Get energy impact and trust per person from Events
+            # Get energy impact and trust per person from Events - Only VERIFIED records
             energy_stats = session.query(
                 Event.person_id,
                 func.sum(Event.energy_saved_estimate).label('energy_saved'),
+                func.sum(Event.blockchain_credits).label('credits_earned'),
                 func.count(Event.event_id).label('event_count'),
                 func.avg(Event.confidence).label('avg_conf')
-            ).filter(Event.person_id.isnot(None)) \
-             .group_by(Event.person_id).all()
+            ).filter(
+                Event.person_id.isnot(None),
+                Event.status == 'verified'
+            ).group_by(Event.person_id).all()
             
-            energy_map = {row.person_id: (float(row.energy_saved or 0), row.event_count, float(row.avg_conf or 0.95)) for row in energy_stats}
+            energy_map = {row.person_id: (float(row.energy_saved or 0), float(row.credits_earned or 0), row.event_count, float(row.avg_conf or 0.95)) for row in energy_stats}
             
-            # Get activity count and weekly gain per person
+            # Get weekly gain per person (from verified activities if possible, but activities don't have status yet)
+            # We filter by persons who have at least one verified event to ensure no mock data leaks
             activity_stats = session.query(
                 PersonActivity.person_id,
                 func.count(PersonActivity.activity_id).label('act_count'),
@@ -572,7 +576,7 @@ class Database:
             
             activity_map = {row.person_id: (row.act_count, int(row.weekly_gain or 0)) for row in activity_stats}
             
-            # Get all persons with their cached credits
+            # Get all persons
             persons = session.query(Person).all()
             
             # Cache all users for faster lookup
@@ -582,20 +586,33 @@ class Database:
             leaderboard = []
             for person in persons:
                 person_id = person.person_id
+                
+                # Do NOT exclude persons with no verified events - show them with 0 score
+                # if person_id not in energy_map:
+                #    continue
+                    
                 user = user_map.get(person_id)
                 
-                energy_saved, event_count, avg_conf = energy_map.get(person_id, (0.0, 0, 0.95))
+                # Exclude faculty from leaderboard as per request
+                # Check both User role (auth) and Person user_type (data)
+                is_faculty_user = user and user.role == 'faculty'
+                is_faculty_person = person.user_type == 'faculty'
+                
+                if is_faculty_user or is_faculty_person:
+                    continue
+
+                energy_saved, credits_earned, event_count, avg_conf = energy_map.get(person_id, (0.0, 0.0, 0, 0.95))
                 total_activities, weekly_gain = activity_map.get(person_id, (event_count, 0))
                 
                 leaderboard.append({
                     'person_id': person_id,
                     'name': user.name if user and user.name else (person.student_id or person_id),
-                    'total_credits': float(person.total_credits_earned or 0),
+                    'total_credits': round(credits_earned, 2),
                     'total_activities': total_activities,
                     'weekly_gain': weekly_gain,
                     'trust_score': avg_conf,
                     'department': person.department or (user.department if user else "Universal"),
-                    'total_energy_saved': energy_saved,
+                    'total_energy_saved': round(energy_saved, 2),
                     'last_seen': person.last_seen.isoformat() if person.last_seen else None
                 })
             
@@ -644,7 +661,7 @@ class Database:
             return {
                 'pending_count': pending_count,
                 'hc_count': hc_count,
-                'avg_accuracy': round(float(avg_conf) * 100, 1),
+                'avg_fidelity': round(float(avg_conf) * 100, 1),
                 'total_verified': total_verified,
                 'db_size_kb': round(db_size_kb, 1)
             }

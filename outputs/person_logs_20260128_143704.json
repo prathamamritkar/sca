@@ -1,0 +1,24 @@
+{
+  "total_persons_tracked": 1,
+  "room_id": "CS_LAB_101",
+  "department": "CS",
+  "generated_at": "2026-01-28T14:37:04.362580",
+  "person_logs": {
+    "person_000": {
+      "total_activities": 1,
+      "first_seen": "2026-01-28T14:37:04.012708",
+      "last_seen": "2026-01-28T14:37:04.012708",
+      "activities": [
+        {
+          "timestamp": "2026-01-28T14:37:04.012708",
+          "activity_type": "presence",
+          "room_id": "CS_LAB_101",
+          "details": {
+            "devices_nearby": 0,
+            "action": null
+          }
+        }
+      ]
+    }
+  }
+}

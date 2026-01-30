@@ -53,6 +53,7 @@ export interface Person {
     last_seen: string;
     total_detections: number;
     face_image_path: string | null;
+    wallet_address?: string | null;
 }
 
 export interface LeaderboardEntry {
@@ -101,6 +102,7 @@ export interface BlockchainCredits {
     recent_transactions: CreditTransaction[];
     recent_history?: any[];
     blockchain_status?: boolean;
+    wallet_address?: string;
 }
 
 export interface CreditTransaction {
@@ -388,6 +390,32 @@ export async function exportEvents(): Promise<void> {
 }
 
 /**
+ * Export users as CSV
+ */
+export async function exportUsers(): Promise<void> {
+    const authHeader = useAuthStore.getState().getAuthHeader();
+    const response = await fetch(`${API_BASE}/db/users/export`, {
+        headers: {
+            ...authHeader
+        }
+    });
+
+    if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `sca_users_export_${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+    } else {
+        throw new Error('Failed to export users');
+    }
+}
+
+/**
  * Get all tracked persons
  */
 export async function getPersons(): Promise<ApiResponse<{ persons: Person[] }>> {
@@ -643,6 +671,31 @@ export async function updateUser(userId: number, data: { role?: string; is_activ
     return authenticatedApiRequest<{ message: string; user: any }>(`/auth/users/${userId}`, {
         method: 'PATCH',
         body: JSON.stringify(data),
+    });
+}
+
+/**
+ * Update wallet address for the current authenticated user
+ */
+export async function updateWalletAddress(walletAddress: string): Promise<ApiResponse<{ message: string; wallet_address: string }>> {
+    return authenticatedApiRequest<{ message: string; wallet_address: string }>('/auth/wallet', {
+        method: 'POST',
+        body: JSON.stringify({ wallet_address: walletAddress }),
+    });
+}
+
+/**
+ * Bridge internal credits to blockchain tokens (SCC)
+ */
+export async function bridgeCredits(amount: number): Promise<ApiResponse<{
+    success: boolean;
+    transaction_hash: string;
+    amount_bridged: number;
+    message: string;
+}>> {
+    return authenticatedApiRequest<{ success: boolean; transaction_hash: string; amount_bridged: number; message: string }>('/energy/bridge', {
+        method: 'POST',
+        body: JSON.stringify({ amount }),
     });
 }
 

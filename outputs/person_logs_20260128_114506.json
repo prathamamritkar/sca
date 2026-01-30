@@ -1,0 +1,58 @@
+{
+  "total_persons_tracked": 2,
+  "room_id": "CS_LAB_101",
+  "department": "CS",
+  "generated_at": "2026-01-28T11:45:06.278910",
+  "person_logs": {
+    "person_000": {
+      "total_activities": 1,
+      "first_seen": "2026-01-28T11:45:06.005017",
+      "last_seen": "2026-01-28T11:45:06.005017",
+      "activities": [
+        {
+          "timestamp": "2026-01-28T11:45:06.005017",
+          "activity_type": "presence",
+          "room_id": "CS_LAB_101",
+          "details": {
+            "devices_nearby": 4,
+            "action": null
+          }
+        }
+      ]
+    },
+    "person_001": {
+      "total_activities": 3,
+      "first_seen": "2026-01-28T11:45:06.018710",
+      "last_seen": "2026-01-28T11:45:06.029279",
+      "activities": [
+        {
+          "timestamp": "2026-01-28T11:45:06.018710",
+          "activity_type": "presence",
+          "room_id": "CS_LAB_101",
+          "details": {
+            "devices_nearby": 4,
+            "action": null
+          }
+        },
+        {
+          "timestamp": "2026-01-28T11:45:06.021723",
+          "activity_type": "presence",
+          "room_id": "CS_LAB_101",
+          "details": {
+            "devices_nearby": 4,
+            "action": null
+          }
+        },
+        {
+          "timestamp": "2026-01-28T11:45:06.029279",
+          "activity_type": "presence",
+          "room_id": "CS_LAB_101",
+          "details": {
+            "devices_nearby": 4,
+            "action": null
+          }
+        }
+      ]
+    }
+  }
+}

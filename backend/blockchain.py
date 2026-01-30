@@ -10,82 +10,92 @@ load_dotenv()
 class BlockchainManager:
     """
     Manages actual blockchain interactions for Sustainability Credits.
-    Supports Polygon Amoy Testnet out of the box.
+    Supports Sepolia Testnet (Ethereum) out of the box.
     """
     
     def __init__(self):
         self.rpc_url = os.getenv('BLOCKCHAIN_RPC_URL')
         self.private_key = os.getenv('BLOCKCHAIN_PRIVATE_KEY')
-        self.contract_address = os.getenv('CONTRACT_ADDRESS')
+        self.contract_address = os.getenv('CONTRACT_ADDRESS') or os.getenv('VITE_CONTRACT_ADDRESS')
         
-        # Initialize Web3
         if self.rpc_url:
             self.w3 = Web3(Web3.HTTPProvider(self.rpc_url))
-            self.is_connected = self.w3.is_connected()
-            if self.is_connected:
-                print(f"🔗 Connected to Blockchain: {self.rpc_url}")
-                # Load account from private key
-                if self.private_key:
+        else:
+            self.w3 = None
+
+        if self.w3 and self.w3.is_connected():
+            print(f"🔗 Connected to Blockchain: {self.rpc_url}")
+            # Load account from private key
+            if self.private_key:
+                try:
                     self.account = self.w3.eth.account.from_key(self.private_key)
                     self.address = self.account.address
                     print(f"🏦 Wallet Node Address: {self.address}")
-            else:
-                print("⚠️ Blockchain RPC URL provided but connection failed.")
+                except Exception as e:
+                    print(f"⚠️ Failed to load wallet from private key: {e}")
+            
+            # Load Contract ABI (Standard ERC20 + Custom awardCredits)
+            self.abi = [
+                {
+                    "inputs": [
+                        {"internalType": "address", "name": "student", "type": "address"},
+                        {"internalType": "uint256", "name": "amount", "type": "uint256"},
+                        {"internalType": "string", "name": "actionType", "type": "string"},
+                        {"internalType": "string", "name": "roomId", "type": "string"}
+                    ],
+                    "name": "awardCredits",
+                    "outputs": [],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
+                },
+                {
+                    "inputs": [
+                        {"internalType": "address", "name": "account", "type": "address"}
+                    ],
+                    "name": "balanceOf",
+                    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                {
+                    "inputs": [],
+                    "name": "decimals",
+                    "outputs": [{"internalType": "uint8", "name": "", "type": "uint8"}],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                {
+                    "inputs": [
+                        {"internalType": "address", "name": "to", "type": "address"},
+                        {"internalType": "uint256", "name": "value", "type": "uint256"}
+                    ],
+                    "name": "transfer",
+                    "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
+                }
+            ]
+            
+            self.contract = None
+            self._decimals = 18 # Default
+            if self.contract_address:
+                try:
+                    self.contract = self.w3.eth.contract(address=Web3.to_checksum_address(self.contract_address), abi=self.abi)
+                    self._decimals = self.contract.functions.decimals().call()
+                    print(f"📄 Contract Initialized at {self.contract_address}")
+                except Exception as e:
+                    print(f"⚠️ Could not fully initialize contract: {e}")
         else:
             self.w3 = None
-            self.is_connected = False
-            print("ℹ️ No Blockchain RPC found. Running in Ledger-Simulation mode.")
+            self.contract = None
+            print("ℹ️ No Blockchain RPC found or connection failed. Running in Ledger-Simulation mode.")
 
-        # Load Contract ABI (Standard ERC20 + Custom awardCredits)
-        self.abi = [
-            {
-                "inputs": [
-                    {"internalType": "address", "name": "student", "type": "address"},
-                    {"internalType": "uint256", "name": "amount", "type": "uint256"},
-                    {"internalType": "string", "name": "actionType", "type": "string"},
-                    {"internalType": "string", "name": "roomId", "type": "string"}
-                ],
-                "name": "awardCredits",
-                "outputs": [],
-                "stateMutability": "nonpayable",
-                "type": "function"
-            },
-            {
-                "inputs": [
-                    {"internalType": "address", "name": "account", "type": "address"}
-                ],
-                "name": "balanceOf",
-                "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
-                "stateMutability": "view",
-                "type": "function"
-            },
-            {
-                "inputs": [],
-                "name": "decimals",
-                "outputs": [{"internalType": "uint8", "name": "", "type": "uint8"}],
-                "stateMutability": "view",
-                "type": "function"
-            },
-            {
-                "inputs": [
-                    {"internalType": "address", "name": "to", "type": "address"},
-                    {"internalType": "uint256", "name": "value", "type": "uint256"}
-                ],
-                "name": "transfer",
-                "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
-                "stateMutability": "nonpayable",
-                "type": "function"
-            }
-        ]
-        
-        self.contract = None
-        self._decimals = 18 # Default
-        if self.is_connected and self.contract_address:
-            try:
-                self.contract = self.w3.eth.contract(address=self.contract_address, abi=self.abi)
-                self._decimals = self.contract.functions.decimals().call()
-            except Exception as e:
-                print(f"⚠️ Could not fully initialize contract: {e}")
+    @property
+    def is_connected(self):
+        """Check live connection status"""
+        if self.w3:
+             return self.w3.is_connected()
+        return False
 
     def mint_credits(self, target_address, amount, action_type="verified_action", room_id="CS_LAB"):
         """

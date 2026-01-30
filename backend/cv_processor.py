@@ -753,18 +753,28 @@ class CVProcessor:
         # Get location verification status
         location_status = {'verified': self.location_verified, 'confidence': self.location_confidence}
         
-        # Calculate overall detection confidence
-        person_confidences = [p.get('confidence', 0.5) for p in (recognized_persons or [])]
-        avg_person_confidence = sum(person_confidences) / len(person_confidences) if person_confidences else 0.0
+        # Calculate overall detection confidence - ENHANCED AUTHENTICITY
+        # 1. Person Confidence
+        if person_count == 0:
+            # If no persons detected and occupancy confirms it, high confidence in "empty" state
+            avg_person_confidence = 0.95 if not occupancy else 0.4
+        else:
+            person_confidences = [p.get('confidence', 0.8) for p in (recognized_persons or [])]
+            avg_person_confidence = sum(person_confidences) / len(person_confidences) if person_confidences else 0.7
         
-        device_confidences = [d.get('overall_confidence', d.get('confidence', 0.5)) for d in devices]
-        avg_device_confidence = sum(device_confidences) / len(device_confidences) if device_confidences else 0.0
+        # 2. Device Confidence
+        if not devices:
+            # If no devices detected, high confidence in clean state
+            avg_device_confidence = 0.9
+        else:
+            device_confidences = [d.get('overall_confidence', d.get('confidence', 0.7)) for d in devices]
+            avg_device_confidence = sum(device_confidences) / len(device_confidences) if device_confidences else 0.6
         
         # Overall event confidence (weighted average)
         overall_confidence = (
-            location_status['confidence'] * 0.2 +  # 20% location
-            avg_person_confidence * 0.4 +          # 40% person recognition
-            avg_device_confidence * 0.4            # 40% device detection
+            location_status['confidence'] * 0.2 +  # 20% location integrity
+            avg_person_confidence * 0.4 +          # 40% person recognition fidelity
+            avg_device_confidence * 0.4            # 40% device auditing accuracy
         )
         
         event = {
@@ -879,6 +889,8 @@ class CVProcessor:
                     'occupancy': occupancy,
                     'person_count': person_count,
                     'person_id': None,
+                    'overall_confidence': event['overall_confidence'],
+                    'action_confidence': event['action_confidence'],
                     'devices_detected': devices,
                     'devices_on': devices_on,
                     'devices_off': devices_off,

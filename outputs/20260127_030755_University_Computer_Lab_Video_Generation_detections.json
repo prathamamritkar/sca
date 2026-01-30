@@ -1,0 +1,206 @@
+[
+  {
+    "timestamp": "2026-01-27T03:07:57.991822",
+    "room_id": "CS_LAB_101",
+    "department": "CS",
+    "location_verified": false,
+    "location_confidence": 0.5,
+    "overall_confidence": 0.61,
+    "occupancy": true,
+    "person_count": 4,
+    "recognized_persons": [
+      {
+        "person_id": "person_000",
+        "bbox": [
+          1010,
+          309,
+          1278,
+          662
+        ],
+        "face_bbox": null,
+        "confidence": 0.5,
+        "detection_method": "appearance",
+        "wallet_address": null
+      },
+      {
+        "person_id": "person_001",
+        "bbox": [
+          774,
+          254,
+          902,
+          483
+        ],
+        "face_bbox": null,
+        "confidence": 0.5,
+        "detection_method": "appearance",
+        "wallet_address": null
+      },
+      {
+        "person_id": "person_001",
+        "bbox": [
+          767,
+          258,
+          834,
+          419
+        ],
+        "face_bbox": null,
+        "confidence": 0.5,
+        "detection_method": "appearance",
+        "wallet_address": null
+      },
+      {
+        "person_id": "person_001",
+        "bbox": [
+          796,
+          253,
+          903,
+          427
+        ],
+        "face_bbox": null,
+        "confidence": 0.5,
+        "detection_method": "appearance",
+        "wallet_address": null
+      }
+    ],
+    "devices_detected": [
+      {
+        "type": "laptop",
+        "confidence": 1.0,
+        "bbox": [
+          0,
+          447,
+          159,
+          592
+        ],
+        "device_id": "laptop_0_447",
+        "state": "ON",
+        "brightness": 97,
+        "priority": "NORMAL",
+        "method": "screen_brightness",
+        "validated": false,
+        "overall_confidence": 0.9600395202636719
+      },
+      {
+        "type": "tv",
+        "confidence": 1.0,
+        "bbox": [
+          104,
+          350,
+          323,
+          503
+        ],
+        "device_id": "tv_104_350",
+        "state": "ON",
+        "brightness": 93,
+        "priority": "NORMAL",
+        "method": "screen_brightness",
+        "validated": false,
+        "overall_confidence": 0.8797732353210449
+      },
+      {
+        "type": "tv",
+        "confidence": 1.0,
+        "bbox": [
+          342,
+          354,
+          546,
+          503
+        ],
+        "device_id": "tv_342_354",
+        "state": "ON",
+        "brightness": 91,
+        "priority": "NORMAL",
+        "method": "screen_brightness",
+        "validated": false,
+        "overall_confidence": 0.8154848694801331
+      },
+      {
+        "type": "mouse",
+        "confidence": 0.3,
+        "bbox": [
+          142,
+          562,
+          181,
+          583
+        ],
+        "device_id": "mouse_142_562",
+        "state": "UNKNOWN",
+        "brightness": 91,
+        "overall_confidence": 0.4689392280578613
+      }
+    ],
+    "devices_on": [
+      {
+        "type": "laptop",
+        "confidence": 1.0,
+        "bbox": [
+          0,
+          447,
+          159,
+          592
+        ],
+        "device_id": "laptop_0_447",
+        "state": "ON",
+        "brightness": 97,
+        "priority": "NORMAL",
+        "method": "screen_brightness",
+        "validated": false,
+        "overall_confidence": 0.9600395202636719
+      },
+      {
+        "type": "tv",
+        "confidence": 1.0,
+        "bbox": [
+          104,
+          350,
+          323,
+          503
+        ],
+        "device_id": "tv_104_350",
+        "state": "ON",
+        "brightness": 93,
+        "priority": "NORMAL",
+        "method": "screen_brightness",
+        "validated": false,
+        "overall_confidence": 0.8797732353210449
+      },
+      {
+        "type": "tv",
+        "confidence": 1.0,
+        "bbox": [
+          342,
+          354,
+          546,
+          503
+        ],
+        "device_id": "tv_342_354",
+        "state": "ON",
+        "brightness": 91,
+        "priority": "NORMAL",
+        "method": "screen_brightness",
+        "validated": false,
+        "overall_confidence": 0.8154848694801331
+      }
+    ],
+    "devices_off": [],
+    "lights_on": true,
+    "action_detected": null,
+    "action_type": "neutral",
+    "action_confidence": 0.5,
+    "energy_saved_estimate": 0.0,
+    "blockchain_credits": 0.0,
+    "waste_multiplier": 1.0,
+    "priority_devices": {},
+    "video_file": "20260127_030755_University_Computer_Lab_Video_Generation.mp4",
+    "frame_number": 150,
+    "energy_metrics": {
+      "power_consumed_watts": 205,
+      "power_saved_watts": 0,
+      "energy_consumed_kwh": 0.0171,
+      "energy_saved_kwh": 0.0,
+      "blockchain_credits": 0.0,
+      "duration_minutes": 5,
+      "potential_monthly_savings_rupees": 0.0
+    }
+  }
+]

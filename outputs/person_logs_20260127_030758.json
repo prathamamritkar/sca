@@ -1,0 +1,94 @@
+{
+  "total_persons_tracked": 2,
+  "room_id": "CS_LAB_101",
+  "department": "CS",
+  "generated_at": "2026-01-27T03:07:58.362250",
+  "person_logs": {
+    "person_000": {
+      "total_activities": 2,
+      "first_seen": "2026-01-27T03:07:32.650272",
+      "last_seen": "2026-01-27T03:07:57.991822",
+      "activities": [
+        {
+          "timestamp": "2026-01-27T03:07:32.650272",
+          "activity_type": "presence",
+          "room_id": "CS_LAB_101",
+          "details": {
+            "devices_nearby": 4,
+            "action": null
+          }
+        },
+        {
+          "timestamp": "2026-01-27T03:07:57.991822",
+          "activity_type": "presence",
+          "room_id": "CS_LAB_101",
+          "details": {
+            "devices_nearby": 4,
+            "action": null
+          }
+        }
+      ]
+    },
+    "person_001": {
+      "total_activities": 6,
+      "first_seen": "2026-01-27T03:07:32.675316",
+      "last_seen": "2026-01-27T03:07:58.029476",
+      "activities": [
+        {
+          "timestamp": "2026-01-27T03:07:32.675316",
+          "activity_type": "presence",
+          "room_id": "CS_LAB_101",
+          "details": {
+            "devices_nearby": 4,
+            "action": null
+          }
+        },
+        {
+          "timestamp": "2026-01-27T03:07:32.680869",
+          "activity_type": "presence",
+          "room_id": "CS_LAB_101",
+          "details": {
+            "devices_nearby": 4,
+            "action": null
+          }
+        },
+        {
+          "timestamp": "2026-01-27T03:07:32.686842",
+          "activity_type": "presence",
+          "room_id": "CS_LAB_101",
+          "details": {
+            "devices_nearby": 4,
+            "action": null
+          }
+        },
+        {
+          "timestamp": "2026-01-27T03:07:58.008550",
+          "activity_type": "presence",
+          "room_id": "CS_LAB_101",
+          "details": {
+            "devices_nearby": 4,
+            "action": null
+          }
+        },
+        {
+          "timestamp": "2026-01-27T03:07:58.020290",
+          "activity_type": "presence",
+          "room_id": "CS_LAB_101",
+          "details": {
+            "devices_nearby": 4,
+            "action": null
+          }
+        },
+        {
+          "timestamp": "2026-01-27T03:07:58.029476",
+          "activity_type": "presence",
+          "room_id": "CS_LAB_101",
+          "details": {
+            "devices_nearby": 4,
+            "action": null
+          }
+        }
+      ]
+    }
+  }
+}

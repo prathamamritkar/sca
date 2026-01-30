@@ -13,6 +13,7 @@ from sqlalchemy import func
 
 def seed_data():
     print("🚀 Initializing Sandbox Population...")
+    random.seed(42)  # Ensure deterministic data generation for consistent demos
     
     db_file = 'outputs/sca_events.db'
     if os.path.exists(db_file):
@@ -35,7 +36,9 @@ def seed_data():
         # 1. Create Users & Persons
         print("👥 Creating User & Person Node Identities...")
         users_data = [
-            {'email': 'admin@sca.campus', 'password': 'admin123', 'name': 'Aditya Sharma', 'role': 'admin', 'dept': 'Administration'},
+            {'email': 'admin@sca.campus', 'password': 'admin123', 'name': 'System Administrator', 'role': 'admin', 'dept': 'Administration'},
+            {'email': 'student@sca.campus', 'password': 'user123', 'name': 'Demo Student', 'role': 'student', 'dept': 'Computer Science'},
+            {'email': 'faculty@sca.campus', 'password': 'user123', 'name': 'Demo Faculty', 'role': 'faculty', 'dept': 'Electrical Engineering'},
             {'email': 'pratham@sca.campus', 'password': 'user123', 'name': 'Pratham Amritkar', 'role': 'student', 'dept': 'Computer Science'},
             {'email': 'sneha@sca.campus', 'password': 'user123', 'name': 'Sneha Patil', 'role': 'student', 'dept': 'Information Technology'},
             {'email': 'rahul@sca.campus', 'password': 'user123', 'name': 'Rahul Verma', 'role': 'student', 'dept': 'Mechanical Engineering'},

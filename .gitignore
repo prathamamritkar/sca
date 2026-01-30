@@ -39,11 +39,3 @@ backend/outputs/face_database/*
 # Environment files (keep example)
 .env
 !.env.example
-
-# Agent and Session
-.agent/
-.antigravity/
-
-# Runtime outputs
-outputs/
-uploads/

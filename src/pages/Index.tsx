@@ -38,37 +38,19 @@ const Index = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { isAuthenticated, logout } = useAuthStore();
-  const [currentMember, setCurrentMember] = useState(0);
   const [isSending, setIsSending] = useState(false);
   const [formState, setFormState] = useState({ name: "", email: "", message: "" });
-  const [networkStats, setNetworkStats] = useState({ totalCredits: 124502, totalEvents: 0, totalEnergy: 0 });
+  const [networkStats, setNetworkStats] = useState({ totalCredits: 0, totalEvents: 0, totalEnergy: 0 });
   const [nodeStatus, setNodeStatus] = useState<'operational' | 'degraded' | 'offline'>('operational');
-  const teamRef = useRef<HTMLElement>(null);
+  const [nodeId, setNodeId] = useState<string>('SCA_NODE_PRIMARY');
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setCurrentMember(0);
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (teamRef.current) {
-      observer.observe(teamRef.current);
-    }
-
-    const timer = setInterval(() => {
-      setCurrentMember((prev) => (prev + 1) % 3);
-    }, 5000);
-
     const fetchStats = async () => {
       try {
         const result = await cvApi.getStats();
         if (result.success && result.data) {
           setNetworkStats({
-            totalCredits: result.data.total_credits || 124502,
+            totalCredits: result.data.total_credits || 0,
             totalEvents: result.data.total_events || 0,
             totalEnergy: result.data.total_energy_saved || 0
           });
@@ -84,6 +66,7 @@ const Index = () => {
         if (response.ok) {
           const data = await response.json();
           setNodeStatus(data.status || 'operational');
+          if (data.node_id) setNodeId(data.node_id);
         } else {
           setNodeStatus('offline');
         }
@@ -98,8 +81,6 @@ const Index = () => {
     const statusTimer = setInterval(fetchNodeStatus, 30000); // Check status every 30 seconds
 
     return () => {
-      observer.disconnect();
-      if (timer) clearInterval(timer);
       if (statsTimer) clearInterval(statsTimer);
       if (statusTimer) clearInterval(statusTimer);
     };
@@ -231,12 +212,12 @@ const Index = () => {
                 <div className="text-left">
                   <div className="text-xs font-bold text-slate-900 uppercase tracking-widest leading-none">Certified Project</div>
                   <a
-                    href="https://sdgs.un.org/frameworks"
+                    href="https://sdgs.un.org/goals"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-[10px] text-slate-400 font-medium hover:text-primary transition-colors cursor-pointer"
                   >
-                    UN Sustainability Framework
+                    UN Sustainability Goals
                   </a>
                 </div>
               </div>
@@ -248,8 +229,8 @@ const Index = () => {
       {/* Segregated Functionality: The Problem (Internal Context) */}
       <section id="mission" className="py-20 bg-slate-50/50">
         <div className="container mx-auto px-6">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
-            <div className="space-y-8">
+          <div className="grid lg:grid-cols-12 gap-16 items-center">
+            <div className="lg:col-span-7 space-y-8">
               <div className="space-y-4">
                 <h2 className="text-xs font-bold text-primary uppercase tracking-[0.3em]">The Inefficiency Gap</h2>
                 <h3 className="text-4xl font-black tracking-tight text-slate-900 leading-tight">
@@ -261,29 +242,53 @@ const Index = () => {
               </div>
 
               <div className="grid sm:grid-cols-2 gap-6">
-                <div className="p-6 rounded-3xl bg-white border border-border/40 shadow-sm">
+                <div className="p-6 rounded-3xl bg-white border border-border/40 shadow-sm hover:border-primary/20 transition-colors">
                   <div className="text-3xl font-black text-slate-900 mb-1">35%</div>
                   <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">Phantom Load</div>
                 </div>
-                <div className="p-6 rounded-3xl bg-white border border-border/40 shadow-sm">
+                <div className="p-6 rounded-3xl bg-white border border-border/40 shadow-sm hover:border-primary/20 transition-colors">
                   <div className="text-3xl font-black text-slate-900 mb-1">200t</div>
                   <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">CO2 Excess/Yr</div>
                 </div>
               </div>
             </div>
 
-            <div className="relative">
-              <div className="aspect-square bg-gradient-to-br from-slate-200 to-slate-100 rounded-[64px] overflow-hidden p-8 flex items-center justify-center group">
-                <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                <Target className="w-48 h-48 text-slate-300 group-hover:text-primary/20 transition-colors duration-500" />
-                <div className="absolute bottom-12 left-12 right-12 p-6 bg-white/90 backdrop-blur rounded-3xl shadow-xl">
+            <div className="lg:col-span-5 relative group/vis">
+              <div className="aspect-square bg-slate-900 rounded-[64px] overflow-hidden p-1 flex items-center justify-center relative shadow-3xl shadow-slate-200">
+                {/* HUD Simulation Layer */}
+                <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-30" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(var(--primary-rgb),0.15)_0%,transparent_70%)]" />
+
+                {/* Scanning Lines */}
+                <div className="absolute inset-0 pointer-events-none">
+                  <div className="absolute top-0 left-0 right-0 h-[1px] bg-primary/20 animate-[scan_4s_linear_infinite]" />
+                  <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-primary/20 animate-[scan_4s_linear_infinite_reverse]" />
+                </div>
+
+                <div className="relative z-10 w-full h-full flex flex-col items-center justify-center p-12">
+                  <div className="relative">
+                    <div className="w-48 h-48 rounded-full border border-white/5 flex items-center justify-center animate-[spin_30s_linear_infinite]">
+                      <div className="absolute inset-2 rounded-full border border-dashed border-primary/20" />
+                      <div className="absolute inset-8 rounded-full border border-white/5" />
+                    </div>
+                    <Target className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 text-primary group-hover/vis:scale-110 transition-transform duration-700" />
+                  </div>
+
+                  <div className="mt-8 flex gap-3">
+                    {[1, 2, 3].map(i => (
+                      <div key={i} className="w-1 h-1 rounded-full bg-primary/40 animate-pulse" style={{ animationDelay: `${i * 0.3}s` }} />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="absolute bottom-10 left-10 right-10 p-6 bg-white/10 backdrop-blur-xl border border-white/10 rounded-3xl group-hover/vis:bg-white/15 transition-colors">
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                    <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center">
                       <TrendingUp className="w-6 h-6 text-primary" />
                     </div>
                     <div>
-                      <div className="text-sm font-bold text-slate-900">20% Reduction</div>
-                      <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Calculated Minimum Goal</div>
+                      <div className="text-sm font-black text-white tracking-tight">20% Reduction</div>
+                      <div className="text-[10px] text-white/40 font-bold uppercase tracking-widest">Target Threshold</div>
                     </div>
                   </div>
                 </div>
@@ -398,16 +403,20 @@ const Index = () => {
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-white/40 uppercase tracking-widest">
                     <span>Target Score: 200K</span>
-                    <span>{Math.min(((networkStats.totalCredits / 200000) * 100), 100).toFixed(1)}% Confirmed</span>
+                    <span>{Math.abs(Math.min(((networkStats.totalCredits / 200000) * 100), 100)).toFixed(1)}% Confirmed</span>
                   </div>
 
                   <div className="pt-4 border-t border-white/5 grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <div className="text-[9px] font-bold uppercase tracking-widest text-white/30">Energy Conserved</div>
-                      <div className="text-xl font-black text-white">{networkStats.totalEnergy.toLocaleString()} <span className="text-[10px] text-white/40">KW</span></div>
+                      <div className="text-xl font-black text-white">
+                        {Math.abs(networkStats.totalEnergy) < 1000
+                          ? `${Math.abs(networkStats.totalEnergy).toLocaleString()} W`
+                          : `${(Math.abs(networkStats.totalEnergy) / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} KW`}
+                      </div>
                     </div>
                     <div className="space-y-1 text-right">
-                      <div className="text-[9px] font-bold uppercase tracking-widest text-white/30">Active Events</div>
+                      <div className="text-[9px] font-bold uppercase tracking-widest text-white/30">Verified Signals</div>
                       <div className="text-xl font-black text-white">{networkStats.totalEvents.toLocaleString()}</div>
                     </div>
                   </div>
@@ -418,43 +427,42 @@ const Index = () => {
         </div>
       </section>
 
-      {/* Team Consortium Section - Simple Card Switcher */}
-      <section id="team" ref={teamRef} className="py-32 bg-slate-50/50">
-        <div className="container mx-auto px-6">
-          <div className="text-center max-w-2xl mx-auto mb-20 space-y-4">
+      {/* Team Consortium Section - Infinite Scrolling Carousel */}
+      <section id="team" className="py-32 bg-slate-50/50 overflow-hidden">
+        <div className="container mx-auto px-6 mb-16">
+          <div className="text-center max-w-2xl mx-auto space-y-4">
             <h2 className="text-xs font-bold text-primary uppercase tracking-[0.3em]">The Innovators</h2>
             <h3 className="text-4xl font-black tracking-tight text-slate-900 uppercase">Team Consortium</h3>
             <p className="text-slate-500 font-medium">Developed by the Class of 2027, BE Computer Engineering at AISSMS COE, Pune.</p>
           </div>
+        </div>
 
-          <div className="max-w-xl mx-auto space-y-8">
-            <div className="p-12 rounded-[56px] bg-white border border-border/60 text-center space-y-8 shadow-2xl shadow-slate-100">
-              <div className="w-20 h-20 rounded-[32px] bg-slate-50 border border-slate-100 flex items-center justify-center mx-auto text-slate-400">
-                <Users className="w-10 h-10" />
+        <div className="relative">
+          {/* Faded edges for better visual transition */}
+          <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-slate-50/50 to-transparent z-10 pointer-events-none" />
+          <div className="absolute right-0 top-0 bottom-0 w-32 bg-gradient-to-l from-slate-50/50 to-transparent z-10 pointer-events-none" />
+
+          <div className="flex animate-marquee hover:[animation-play-state:paused] cursor-grab active:cursor-grabbing w-fit">
+            {[...Array(2)].map((_, i) => (
+              <div key={i} className="flex gap-8 px-4">
+                {[
+                  { name: "Pratham Amritkar", role: "BE Computer 2027 • AISSMS COE, Pune" },
+                  { name: "Harshalee Malu", role: "BE Computer 2027 • AISSMS COE, Pune" },
+                  { name: "Balaji Alli", role: "BE Computer 2027 • AISSMS COE, Pune" }
+                ].map((member, idx) => (
+                  <div key={idx} className="w-[400px] p-10 rounded-[48px] bg-white border border-border/60 text-center space-y-6 shadow-xl shadow-slate-100/50 shrink-0">
+                    <div className="w-16 h-16 rounded-[24px] bg-slate-50 border border-slate-100 flex items-center justify-center mx-auto text-slate-400">
+                      <Users className="w-8 h-8" />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="text-[10px] font-bold text-primary uppercase tracking-[0.4em] mb-2 leading-none opacity-60">Consortium Member</div>
+                      <h4 className="text-2xl font-black tracking-tighter text-slate-900">{member.name}</h4>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none">{member.role}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="space-y-2">
-                <div className="text-xs font-bold text-primary uppercase tracking-[0.4em] mb-2 leading-none opacity-60">Consortium Member</div>
-                <h4 className="text-3xl font-black tracking-tighter text-slate-900">
-                  {currentMember === 0 ? "Pratham Amritkar" : currentMember === 1 ? "Harshalee Malu" : "Balaji Alli"}
-                </h4>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">BE Computer 2027 • AISSMS COE, Pune</p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-center gap-4">
-              {[0, 1, 2].map((i) => (
-                <button
-                  key={i}
-                  onClick={() => setCurrentMember(i)}
-                  aria-label={`Switch to member ${i + 1}`}
-                  className={cn(
-                    "h-2 rounded-full transition-all duration-500 focus:outline-none focus:ring-2 focus:ring-primary/20",
-                    currentMember === i ? "bg-primary w-10" : "bg-slate-200 w-2 hover:bg-slate-300"
-                  )}
-                />
-              ))}
-            </div>
-
+            ))}
           </div>
         </div>
       </section>
@@ -626,27 +634,29 @@ const Index = () => {
             <div className="space-y-4">
               <h5 className="text-[10px] font-bold text-slate-900 uppercase tracking-widest mb-6">Status</h5>
               <div className={cn(
-                "flex items-center gap-2 text-xs font-bold capitalize",
-                nodeStatus === 'operational' && "text-success",
-                nodeStatus === 'degraded' && "text-yellow-600",
-                nodeStatus === 'offline' && "text-destructive"
+                "flex items-center gap-2 text-[11px] font-bold uppercase tracking-tight",
+                nodeStatus === 'operational' && "text-emerald-600",
+                nodeStatus === 'degraded' && "text-amber-600",
+                nodeStatus === 'offline' && "text-rose-600"
               )}>
                 <div className={cn(
-                  "w-2 h-2 rounded-full animate-pulse",
-                  nodeStatus === 'operational' && "bg-success",
-                  nodeStatus === 'degraded' && "bg-yellow-600",
-                  nodeStatus === 'offline' && "bg-destructive"
+                  "w-1.5 h-1.5 rounded-full animate-pulse",
+                  nodeStatus === 'operational' && "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]",
+                  nodeStatus === 'degraded' && "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]",
+                  nodeStatus === 'offline' && "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.4)]"
                 )} />
-                {nodeStatus === 'operational' && 'All Nodes Operational'}
-                {nodeStatus === 'degraded' && 'Node Degraded'}
-                {nodeStatus === 'offline' && 'Node Offline'}
+                {nodeStatus === 'operational' && 'Synced & Active'}
+                {nodeStatus === 'degraded' && 'Local / Degraded'}
+                {nodeStatus === 'offline' && 'Severed / Offline'}
               </div>
+              <div className="text-[10px] font-mono text-slate-400 font-medium tracking-wider"> Node Identifier: {nodeId}</div>
             </div>
           </div>
 
           <div className="pt-12 border-t border-border flex flex-col md:flex-row items-center justify-between gap-6 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            <div className="text-center md:text-left">
-              <div>© 2026 SUSTAINABLE CAMPUS AUTOMATION</div>
+            <div className="text-center md:text-left flex items-center gap-2">
+              <Leaf className="w-3.5 h-3.5 text-primary" />
+              <span>© 2026 SUSTAINABLE CAMPUS AUTOMATION</span>
             </div>
             <div className="flex gap-8">
               <a href="#team" className="hover:text-slate-900">About Initiative</a>

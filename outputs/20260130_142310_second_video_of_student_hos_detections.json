@@ -1,0 +1,71 @@
+[
+  {
+    "timestamp": "2026-01-30T14:23:14.680271",
+    "room_id": "CS_LAB_101",
+    "department": "CS",
+    "location_verified": false,
+    "location_confidence": 0.5,
+    "overall_confidence": 0.78,
+    "occupancy": false,
+    "person_count": 0,
+    "recognized_persons": [],
+    "devices_detected": [
+      {
+        "type": "laptop",
+        "confidence": 1.0,
+        "bbox": [
+          263,
+          282,
+          590,
+          511
+        ],
+        "device_id": "laptop_260_280",
+        "state": "ON",
+        "brightness": 126,
+        "priority": "NORMAL",
+        "method": "screen_brightness",
+        "validated": false,
+        "overall_confidence": 0.7435583233833314
+      }
+    ],
+    "devices_on": [
+      {
+        "type": "laptop",
+        "confidence": 1.0,
+        "bbox": [
+          263,
+          282,
+          590,
+          511
+        ],
+        "device_id": "laptop_260_280",
+        "state": "ON",
+        "brightness": 126,
+        "priority": "NORMAL",
+        "method": "screen_brightness",
+        "validated": false,
+        "overall_confidence": 0.7435583233833314
+      }
+    ],
+    "devices_off": [],
+    "lights_on": false,
+    "action_detected": "deliberate_waste",
+    "action_type": "unsustainable",
+    "action_confidence": 0.8,
+    "energy_saved_estimate": -45.0,
+    "blockchain_credits": -2.03,
+    "waste_multiplier": 1.0,
+    "priority_devices": {},
+    "video_file": "20260130_142310_second_video_of_student_hos.mp4",
+    "frame_number": 150,
+    "energy_metrics": {
+      "power_consumed_watts": 45,
+      "power_saved_watts": 0,
+      "energy_consumed_kwh": 0.0037,
+      "energy_saved_kwh": 0.0,
+      "blockchain_credits": 0.0,
+      "duration_minutes": 5,
+      "potential_monthly_savings_rupees": 0.0
+    }
+  }
+]

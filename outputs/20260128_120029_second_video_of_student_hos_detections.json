@@ -1,0 +1,9 @@
+[
+  {
+    "timestamp": "2026-01-28T12:00:33.055156",
+    "room_id": "CS_LAB_101",
+    "department": "CS",
+    "location_verified": false,
+    "location_confidence": 0.5,
+    "overall_confidence": 0.4,
+    "occupancy": 

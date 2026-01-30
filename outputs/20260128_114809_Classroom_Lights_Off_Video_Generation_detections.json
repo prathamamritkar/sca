@@ -1,0 +1,49 @@
+[
+  {
+    "timestamp": "2026-01-28T11:48:11.976436",
+    "room_id": "CS_LAB_101",
+    "department": "CS",
+    "location_verified": false,
+    "location_confidence": 0.5,
+    "overall_confidence": 0.3,
+    "occupancy": true,
+    "person_count": 1,
+    "recognized_persons": [
+      {
+        "person_id": "person_002",
+        "bbox": [
+          268,
+          358,
+          452,
+          714
+        ],
+        "face_bbox": null,
+        "confidence": 0.5,
+        "detection_method": "appearance",
+        "wallet_address": null
+      }
+    ],
+    "devices_detected": [],
+    "devices_on": [],
+    "devices_off": [],
+    "lights_on": false,
+    "action_detected": null,
+    "action_type": "neutral",
+    "action_confidence": 0.5,
+    "energy_saved_estimate": 0.0,
+    "blockchain_credits": 0.0,
+    "waste_multiplier": 1.0,
+    "priority_devices": {},
+    "video_file": "20260128_114809_Classroom_Lights_Off_Video_Generation.mp4",
+    "frame_number": 150,
+    "energy_metrics": {
+      "power_consumed_watts": 0,
+      "power_saved_watts": 0,
+      "energy_consumed_kwh": 0.0,
+      "energy_saved_kwh": 0.0,
+      "blockchain_credits": 0.0,
+      "duration_minutes": 5,
+      "potential_monthly_savings_rupees": 0.0
+    }
+  }
+]

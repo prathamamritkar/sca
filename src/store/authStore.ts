@@ -42,7 +42,7 @@ export const useAuthStore = create<AuthState>()(
     persist(
         (set, get) => ({
             isAuthenticated: false,
-            useMockData: true,
+            useMockData: false,
             user: null,
             tokens: {
                 accessToken: null,
@@ -69,7 +69,7 @@ export const useAuthStore = create<AuthState>()(
                     isAuthenticated: false,
                     user: null,
                     userEmail: null,
-                    useMockData: true,
+                    useMockData: false,
                     tokens: {
                         accessToken: null,
                         refreshToken: null,

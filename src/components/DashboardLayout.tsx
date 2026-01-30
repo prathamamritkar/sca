@@ -107,9 +107,13 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                   {user?.role === 'admin' ? 'Administrator' : user?.role === 'faculty' ? 'Faculty Node' : 'Student Node'}
                 </span>
               </div>
-              <Button variant="ghost" size="icon" aria-label="View Public Website" className="w-10 h-10 rounded-xl border border-border/40 hover:bg-slate-100" onClick={() => navigate("/")}>
+              <a
+                href="/"
+                aria-label="View Public Website"
+                className="w-10 h-10 rounded-xl border border-border/40 hover:bg-slate-100 flex items-center justify-center transition-colors"
+              >
                 <ExternalLink className="w-4 h-4 text-slate-400" />
-              </Button>
+              </a>
               <Button variant="ghost" size="icon" aria-expanded={isMobileMenuOpen} aria-label="Toggle Menu" className="md:hidden" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
                 {isMobileMenuOpen ? <X /> : <Menu />}
               </Button>
@@ -127,7 +131,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           )}>
             <div
               ref={sidebarRef}
-              className="flex flex-col h-full lg:h-[calc(100vh-var(--header-height)-var(--space-xl))] lg:sticky lg:top-[calc(var(--header-height)+var(--space-lg))] space-y-12 overflow-y-auto sidebar-scroll-container pb-10"
+              className="flex flex-col h-full lg:h-[calc(100vh-var(--header-height)-var(--space-xl))] lg:sticky lg:top-[calc(var(--header-height)+var(--space-lg))] space-y-8 overflow-y-auto sidebar-scroll-container pb-10"
             >
               <nav aria-label="Main Navigation" className="space-y-4">
                 <h3 className="text-[10px] font-bold uppercase tracking-[0.4em] text-slate-400 px-4">Core Context</h3>
@@ -145,19 +149,19 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                           "flex items-center justify-between group px-4 py-4 rounded-3xl transition-all duration-300 focus-visible:ring-inset",
                           isActive
                             ? "bg-slate-900 text-white shadow-2xl shadow-slate-200"
-                            : "text-slate-500 hover:text-slate-900 hover:bg-slate-200/50"
+                            : "text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 hover:translate-x-1"
                         )}
                       >
                         <div className="flex items-center gap-4">
                           <div className={cn(
-                            "w-10 h-10 rounded-xl flex items-center justify-center transition-all",
-                            isActive ? "bg-primary/20" : "bg-slate-100 group-hover:bg-slate-200"
+                            "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300",
+                            isActive ? "bg-primary/20" : "bg-slate-100 group-hover:bg-slate-200 group-hover:scale-105"
                           )}>
-                            <Icon className={cn("w-5 h-5", isActive ? "text-primary" : "text-slate-400 group-hover:text-slate-600")} />
+                            <Icon className={cn("w-5 h-5 transition-colors duration-300", isActive ? "text-primary" : "text-slate-400 group-hover:text-primary")} />
                           </div>
-                          <div>
+                          <div className="transition-transform duration-300">
                             <div className="text-sm font-bold tracking-tight">{item.label}</div>
-                            <div className={cn("text-[9px] font-bold uppercase tracking-widest", isActive ? "text-white/40" : "text-slate-400")}>
+                            <div className={cn("text-[8px] font-bold uppercase tracking-widest transition-colors", isActive ? "text-white/40" : "text-slate-400 group-hover:text-slate-500")}>
                               {item.description}
                             </div>
                           </div>
@@ -169,29 +173,8 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                 </div>
               </nav>
 
-              {/* Network Status Widget */}
-              <div className="px-2">
-                <div className="p-5 rounded-[24px] bg-slate-900 text-white relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 p-3 opacity-10 -rotate-12 group-hover:scale-110 transition-transform">
-                    <Cpu className="w-12 h-12" />
-                  </div>
-                  <div className="relative z-10 space-y-3">
-                    <div className="space-y-0.5">
-                      <div className="text-[8px] font-bold text-primary uppercase tracking-[0.2em]">System Health</div>
-                      <div className="text-sm font-black text-white/90">Operating Range</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="h-1 flex-1 bg-white/10 rounded-full overflow-hidden">
-                        <div className="h-full bg-primary w-[88%] animate-pulse" />
-                      </div>
-                      <span className="text-[9px] font-bold">88.2%</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
               {/* Global Sign Out (Segregated Bottom) */}
-              <div className="pt-8 border-t border-slate-200">
+              <div className="pt-6 border-t border-slate-200">
                 <button
                   onClick={handleLogout}
                   className="w-full flex items-center gap-4 px-6 py-4 rounded-3xl text-destructive hover:bg-destructive/5 transition-colors group"
