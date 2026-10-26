@@ -30,17 +30,39 @@ class CVProcessor:
     _qr_detector = None
     
     @classmethod
+    def _load_cascade(cls, filename):
+        candidates = []
+        if hasattr(cv2, 'data') and hasattr(cv2.data, 'haarcascades') and cv2.data.haarcascades:
+            candidates.append(os.path.join(cv2.data.haarcascades, filename))
+        
+        candidates.extend([
+            os.path.join('/usr/share/opencv4/haarcascades', filename),
+            os.path.join('/usr/share/opencv/haarcascades', filename),
+            os.path.join('/usr/local/share/opencv4/haarcascades', filename),
+            os.path.join(os.path.dirname(__file__), filename),
+            filename
+        ])
+        
+        for path in candidates:
+            if path and os.path.exists(path):
+                try:
+                    cascade = cv2.CascadeClassifier(path)
+                    if not cascade.empty():
+                        return cascade
+                except Exception:
+                    continue
+        return None
+
+    @classmethod
     def _get_face_cascade(cls):
-        """Lazy load and cache face cascade classifier"""
         if cls._face_cascade is None:
-            cls._face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+            cls._face_cascade = cls._load_cascade('haarcascade_frontalface_default.xml')
         return cls._face_cascade
     
     @classmethod
     def _get_face_cascade_profile(cls):
-        """Lazy load and cache profile face cascade classifier"""
         if cls._face_cascade_profile is None:
-            cls._face_cascade_profile = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_profileface.xml')
+            cls._face_cascade_profile = cls._load_cascade('haarcascade_profileface.xml')
         return cls._face_cascade_profile
     
     @classmethod
@@ -312,25 +334,30 @@ class CVProcessor:
             face_cascade = self._get_face_cascade()
             face_cascade_profile = self._get_face_cascade_profile()
             
-            # Pass 1: Frontal face detection
-            faces = face_cascade.detectMultiScale(
-                person_roi,
-                scaleFactor=1.05,  # More sensitive
-                minNeighbors=3,    # Lower threshold
-                minSize=(20, 20)   # Smaller minimum size
-            )
+            faces = ()
+            if face_cascade is not None and not face_cascade.empty():
+                try:
+                    faces = face_cascade.detectMultiScale(
+                        person_roi,
+                        scaleFactor=1.05,
+                        minNeighbors=3,
+                        minSize=(20, 20)
+                    )
+                except Exception:
+                    faces = ()
             
-            # Pass 2: If no frontal face, try profile detection
-            if len(faces) == 0:
-                faces = face_cascade_profile.detectMultiScale(
-                    person_roi,
-                    scaleFactor=1.1,
-                    minNeighbors=4,
-                    minSize=(20, 20)
-                )
+            if (faces is None or len(faces) == 0) and face_cascade_profile is not None and not face_cascade_profile.empty():
+                try:
+                    faces = face_cascade_profile.detectMultiScale(
+                        person_roi,
+                        scaleFactor=1.1,
+                        minNeighbors=4,
+                        minSize=(20, 20)
+                    )
+                except Exception:
+                    faces = ()
             
-            # If still no face detected, use appearance-based recognition
-            if len(faces) == 0:
+            if faces is None or len(faces) == 0:
                 # Extract color ROI only when needed
                 person_roi_color = frame[y1:y2, x1:x2]
                 # Use the entire person bounding box as "face" for recognition
