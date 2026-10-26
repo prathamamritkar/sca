@@ -24,46 +24,7 @@ class NumpyEncoder(json.JSONEncoder):
         return json.JSONEncoder.default(self, obj)
 
 class CVProcessor:
-    # Class-level cache for face cascades (shared across instances)
-    _face_cascade = None
-    _face_cascade_profile = None
     _qr_detector = None
-    
-    @classmethod
-    def _load_cascade(cls, filename):
-        candidates = []
-        if hasattr(cv2, 'data') and hasattr(cv2.data, 'haarcascades') and cv2.data.haarcascades:
-            candidates.append(os.path.join(cv2.data.haarcascades, filename))
-        
-        candidates.extend([
-            os.path.join('/usr/share/opencv4/haarcascades', filename),
-            os.path.join('/usr/share/opencv/haarcascades', filename),
-            os.path.join('/usr/local/share/opencv4/haarcascades', filename),
-            os.path.join(os.path.dirname(__file__), filename),
-            filename
-        ])
-        
-        for path in candidates:
-            if path and os.path.exists(path):
-                try:
-                    cascade = cv2.CascadeClassifier(path)
-                    if not cascade.empty():
-                        return cascade
-                except Exception:
-                    continue
-        return None
-
-    @classmethod
-    def _get_face_cascade(cls):
-        if cls._face_cascade is None:
-            cls._face_cascade = cls._load_cascade('haarcascade_frontalface_default.xml')
-        return cls._face_cascade
-    
-    @classmethod
-    def _get_face_cascade_profile(cls):
-        if cls._face_cascade_profile is None:
-            cls._face_cascade_profile = cls._load_cascade('haarcascade_profileface.xml')
-        return cls._face_cascade_profile
     
     @classmethod
     def _get_qr_detector(cls):
@@ -88,8 +49,6 @@ class CVProcessor:
         
         # Use class-level cached detectors
         self.qr_detector = self._get_qr_detector()
-        self.face_cascade = self._get_face_cascade()
-        self.face_cascade_profile = self._get_face_cascade_profile()
         
         # Person tracking - ENHANCED ACCURACY
         self.known_faces = {}  # Store: {person_id: {'histograms': [], 'last_bbox': [], 'frame_last_seen': 0, 'detection_count': 0, 'confidence_history': []}}
@@ -314,89 +273,30 @@ class CVProcessor:
     
     def detect_and_recognize_faces(self, frame, person_boxes):
         """
-        Detect and recognize faces in person bounding boxes
-        Returns: list of person IDs and face locations
+        Identify and track persons from YOLO bounding boxes using appearance & spatial tracking
+        Returns: list of person IDs and bounding box locations
         """
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         recognized_persons = []
         
         for box in person_boxes:
             x1, y1, x2, y2 = box
             
-            # Extract person region (avoid unnecessary copies)
-            person_roi = gray[y1:y2, x1:x2]
-            
-            if person_roi.size == 0:
+            # Extract person region
+            person_roi_color = frame[y1:y2, x1:x2]
+            if person_roi_color.size == 0:
                 continue
             
-            # Multi-pass face detection for higher accuracy using cached cascades
-            # Get cached cascade classifiers
-            face_cascade = self._get_face_cascade()
-            face_cascade_profile = self._get_face_cascade_profile()
+            # Match or create identity using appearance histogram & Kalman spatial tracking
+            person_id = self._match_or_create_person_by_appearance(person_roi_color, [x1, y1, x2, y2])
             
-            faces = ()
-            if face_cascade is not None and not face_cascade.empty():
-                try:
-                    faces = face_cascade.detectMultiScale(
-                        person_roi,
-                        scaleFactor=1.05,
-                        minNeighbors=3,
-                        minSize=(20, 20)
-                    )
-                except Exception:
-                    faces = ()
-            
-            if (faces is None or len(faces) == 0) and face_cascade_profile is not None and not face_cascade_profile.empty():
-                try:
-                    faces = face_cascade_profile.detectMultiScale(
-                        person_roi,
-                        scaleFactor=1.1,
-                        minNeighbors=4,
-                        minSize=(20, 20)
-                    )
-                except Exception:
-                    faces = ()
-            
-            if faces is None or len(faces) == 0:
-                # Extract color ROI only when needed
-                person_roi_color = frame[y1:y2, x1:x2]
-                # Use the entire person bounding box as "face" for recognition
-                person_id = self._match_or_create_person_by_appearance(person_roi_color, [x1, y1, x2, y2])
-                
-                recognized_persons.append({
-                    'person_id': person_id,
-                    'bbox': [x1, y1, x2, y2],
-                    'face_bbox': None,
-                    'confidence': 0.5,  # Lower confidence when face not detected
-                    'detection_method': 'appearance',
-                    'wallet_address': self.known_faces[person_id].get('wallet_address')
-                })
-            else:
-                # Take the largest face
-                fx, fy, fw, fh = max(faces, key=lambda f: f[2] * f[3])
-                
-                # Extract face region (lazy color extraction)
-                face_roi = person_roi[fy:fy+fh, fx:fx+fw]
-                
-                # Resize for consistency
-                if face_roi.size > 0:
-                    face_resized = cv2.resize(face_roi, (100, 100))
-                    
-                    # Extract color ROI only when needed for saving
-                    person_roi_color = frame[y1:y2, x1:x2]
-                    face_roi_color = person_roi_color[fy:fy+fh, fx:fx+fw]
-                    
-                    # Match with known faces (with bbox for spatial tracking)
-                    person_id = self._match_or_create_person(face_resized, face_roi_color, [x1, y1, x2, y2])
-                    
-                    recognized_persons.append({
-                        'person_id': person_id,
-                        'bbox': [x1, y1, x2, y2],
-                        'face_bbox': [x1 + fx, y1 + fy, fx + fw, fy + fh],
-                        'confidence': 0.9,
-                        'detection_method': 'face',
-                        'wallet_address': self.known_faces[person_id].get('wallet_address')
-                    })
+            recognized_persons.append({
+                'person_id': person_id,
+                'bbox': [x1, y1, x2, y2],
+                'face_bbox': None,
+                'confidence': 0.85,
+                'detection_method': 'appearance',
+                'wallet_address': self.known_faces[person_id].get('wallet_address')
+            })
         
         return recognized_persons
     
