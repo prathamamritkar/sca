@@ -96,22 +96,39 @@ const Dashboard = () => {
   }, [detectionResults]);
 
   const actionTypes = useMemo(() => Array.from(new Set(detectionResults.map(d => d.action))), [detectionResults]);
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && file.type.startsWith("video/")) setVideoFile(file);
     else if (file) toast({ title: "Incompatible Format", description: "Audit engine requires video source.", variant: "destructive" });
   };
 
+  const [processingStage, setProcessingStage] = useState<string>("");
+
   const handleProcessVideo = async () => {
     if (!videoFile) return;
     setIsProcessing(true);
+    setProcessingStage("Uploading...");
 
     try {
-      const upload = await cvApi.uploadVideo(videoFile);
-      if (!upload.success || !upload.data) throw new Error(upload.error || 'Upload failed');
+      // Mock mode: instant demo without hitting backend
+      if (useMockData) {
+        await new Promise(r => setTimeout(r, 1500));
+        const mockResults: DetectionResult[] = [
+          { id: Date.now(), timestamp: new Date().toISOString(), action: 'lights_off_empty_room', location: 'CS_LAB_101', fidelity: 0.92, creditsEarned: 12.5, actionType: 'sustainable', energySaved: 45.0 },
+          { id: Date.now() + 1, timestamp: new Date().toISOString(), action: 'device_on_no_person', location: 'CS_LAB_101', fidelity: 0.85, creditsEarned: -5.0, actionType: 'unsustainable', energySaved: -20.0 },
+        ];
+        setDetectionResults(prev => [...mockResults, ...prev]);
+        toast({ title: "Demo Audit Complete", description: `Demo mode: ${mockResults.length} synthetic signals generated.` });
+        return;
+      }
 
+      const upload = await cvApi.uploadVideo(videoFile);
+      if (!upload.success || !upload.data) throw new Error(upload.error || 'Upload failed — check backend is running');
+
+      setProcessingStage("Analyzing video with AI...");
       const process = await cvApi.processVideo(upload.data.filename, 0.5);
-      if (!process.success || !process.data) throw new Error(process.error || 'Processing failed');
+      if (!process.success || !process.data) throw new Error(process.error || 'Processing failed — check server logs');
 
       const converted = (process.data.events || []).map((e, i) => ({
         id: e.event_id || Date.now() + i,
@@ -125,12 +142,14 @@ const Dashboard = () => {
       }));
 
       setDetectionResults(prev => [...converted, ...prev]);
+      await fetchLatestEvents();
       toast({ title: "Signal Audit Complete", description: `Successfully parsed ${converted.length} signals from stream.` });
     } catch (err: any) {
-      const errorMessage = err.response?.data?.error || err.message || "An unexpected error occurred during AI inference.";
+      const errorMessage = err.message || "An unexpected error occurred during AI inference.";
       toast({ title: "Neural Link Error", description: errorMessage, variant: "destructive" });
     } finally {
       setIsProcessing(false);
+      setProcessingStage("");
     }
   };
 
@@ -218,7 +237,7 @@ const Dashboard = () => {
                 </label>
                 {videoFile && (
                   <Button onClick={handleProcessVideo} aria-label="Start Processing Video" disabled={isProcessing} className="h-12 px-10 rounded-2xl bg-slate-900 text-white font-black text-xs uppercase tracking-widest shadow-2xl shadow-slate-200 group">
-                    {isProcessing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Executing...</> : <><Play className="w-4 h-4 mr-3" /> Initialize Signal Audit</>}
+                    {isProcessing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{processingStage || 'Executing...'}</> : <><Play className="w-4 h-4 mr-3" /> Initialize Signal Audit</>}
                   </Button>
                 )}
               </div>

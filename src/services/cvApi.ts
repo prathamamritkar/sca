@@ -276,27 +276,11 @@ export async function processVideo(
     filename: string,
     confidence: number = 0.5
 ): Promise<ApiResponse<ProcessingResult>> {
-    const response = await authenticatedApiRequest<{ message: string; results: any }>('/process', {
+    // Backend returns ProcessingResult directly (flat, not wrapped in {message, results})
+    return authenticatedApiRequest<ProcessingResult>('/process', {
         method: 'POST',
         body: JSON.stringify({ filename, confidence }),
     });
-
-    // Backend returns {message, results}, we need to extract results
-    if (response.success && response.data) {
-        return {
-            success: true,
-            error: null,
-            data: response.data.results as ProcessingResult,
-            status: response.status
-        };
-    }
-
-    return {
-        success: false,
-        error: response.error,
-        data: null,
-        status: response.status
-    };
 }
 
 /**
