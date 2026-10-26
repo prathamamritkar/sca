@@ -17,23 +17,30 @@ class BlockchainManager:
         self.rpc_url = os.getenv('BLOCKCHAIN_RPC_URL')
         self.private_key = os.getenv('BLOCKCHAIN_PRIVATE_KEY')
         self.contract_address = os.getenv('CONTRACT_ADDRESS')
+        self._is_connected = False
         
-        # Initialize Web3
+        # Initialize Web3 with a hard timeout so it never hangs
         if self.rpc_url:
-            self.w3 = Web3(Web3.HTTPProvider(self.rpc_url))
-            self.is_connected = self.w3.is_connected()
-            if self.is_connected:
+            try:
+                self.w3 = Web3(Web3.HTTPProvider(
+                    self.rpc_url,
+                    request_kwargs={'timeout': 3}  # 3-second hard cap
+                ))
+                self._is_connected = self.w3.is_connected()
+            except Exception:
+                self.w3 = None
+                self._is_connected = False
+
+            if self._is_connected:
                 print(f"🔗 Connected to Blockchain: {self.rpc_url}")
-                # Load account from private key
                 if self.private_key:
                     self.account = self.w3.eth.account.from_key(self.private_key)
                     self.address = self.account.address
                     print(f"🏦 Wallet Node Address: {self.address}")
             else:
-                print("⚠️ Blockchain RPC URL provided but connection failed.")
+                print("⚠️ Blockchain RPC URL provided but connection failed or timed out.")
         else:
             self.w3 = None
-            self.is_connected = False
             print("ℹ️ No Blockchain RPC found. Running in Ledger-Simulation mode.")
 
         # Load Contract ABI (Standard ERC20 + Custom awardCredits)
@@ -79,20 +86,25 @@ class BlockchainManager:
         ]
         
         self.contract = None
-        self._decimals = 18 # Default
-        if self.is_connected and self.contract_address:
+        self._decimals = 18
+        if self._is_connected and self.contract_address:
             try:
                 self.contract = self.w3.eth.contract(address=self.contract_address, abi=self.abi)
                 self._decimals = self.contract.functions.decimals().call()
             except Exception as e:
                 print(f"⚠️ Could not fully initialize contract: {e}")
 
+    @property
+    def is_connected(self):
+        """Safe bool property — works whether accessed as attribute or called as method"""
+        return self._is_connected
+
     def mint_credits(self, target_address, amount, action_type="verified_action", room_id="CS_LAB"):
         """
         Actually mints/awards tokens on the blockchain.
         Returns the transaction hash.
         """
-        if not self.is_connected or not self.contract or not self.private_key:
+        if not self._is_connected or not self.contract or not self.private_key:
             # Fallback to simulation
             tx_hash = f"0x_sim_{datetime.now().timestamp()}"
             print(f"🧪 [SIMULATION] Awarded {amount} CSC to {target_address} ({action_type})")
@@ -128,7 +140,7 @@ class BlockchainManager:
 
     def get_wallet_balance(self, address):
         """Get balance of specific wallet in CSC tokens"""
-        if not self.is_connected or not self.contract:
+        if not self._is_connected or not self.contract:
             return 0.0
         
         try:
@@ -140,7 +152,7 @@ class BlockchainManager:
 
     def transfer_credits(self, to_address, amount):
         """Perform a peer-to-peer transfer of credits on-chain"""
-        if not self.is_connected or not self.contract or not self.private_key:
+        if not self._is_connected or not self.contract or not self.private_key:
             return None
             
         try:

@@ -114,8 +114,9 @@ class CVProcessor:
         self.previous_occupancy = False
         self.previous_lights_on = False
         
-        # Initialize blockchain manager
-        self.blockchain = BlockchainManager()
+        # Reuse global blockchain instance — never create a new one per-processor
+        # (avoids a second RPC connection attempt which can hang for 30s+)
+        self.blockchain = None  # Set externally via app.py if needed
     
     def _load_known_faces(self):
         """Load known persons from database to maintain cross-session identity"""
@@ -949,11 +950,7 @@ class CVProcessor:
         # update thresholds
         self.yolo_conf_threshold = confidence_threshold
         
-        # Open video source
-        if mode == 'realtime':
-            cap = cv2.VideoCapture(source if source is not None else 0)
-        else:
-            cap = cv2.VideoCapture(str(source))
+        cap = cv2.VideoCapture(str(source)) if mode != 'realtime' else cv2.VideoCapture(source if source is not None else 0)
         
         if not cap.isOpened():
             print(f"Error: Cannot open video source: {source}")
@@ -961,68 +958,57 @@ class CVProcessor:
         
         events = []
         frame_count = 0
-        self.current_frame_number = 0  # Reset frame counter for tracking
+        self.current_frame_number = 0
         
         import time
         start_time = time.time()
         
-        print(f"Processing video ({mode})... Press 'q' to quit")
+        print(f"Processing video ({mode})...")
         
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            # Check duration limit for realtime mode
-            if duration_seconds and (time.time() - start_time) > duration_seconds:
-                print(f"⏱ Duration limit reached: {duration_seconds}s")
-                break
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
                 
-            frame_count += 1
-            self.current_frame_number = frame_count
-            
-            # Process based on mode to balance accuracy and performance
-            # Realtime: Every 30 frames (approx 1s) to not miss quick movements
-            # Uploaded: Every 150 frames (approx 5s) for audit efficiency
-            processing_interval = 30 if mode == 'realtime' else 150
-            
-            if frame_count % processing_interval == 0:
-                # Enhance frame for low-light conditions
-                enhanced_frame = self.energy_analyzer.enhance_low_light_frame(frame)
+                if duration_seconds and (time.time() - start_time) > duration_seconds:
+                    print(f"⏱ Duration limit reached: {duration_seconds}s")
+                    break
+                    
+                frame_count += 1
+                self.current_frame_number = frame_count
                 
-                results = self.process_frame(enhanced_frame)
-                occupancy, person_count, person_boxes = self.detect_occupancy(results)
-                devices = self.detect_devices(results, frame=enhanced_frame)  # Pass frame for state detection
+                processing_interval = 30 if mode == 'realtime' else 150
                 
-                # Recognize persons with face detection
-                recognized_persons = []
-                if person_count > 0:
-                    recognized_persons = self.detect_and_recognize_faces(enhanced_frame, person_boxes)
-                
-                # Generate event with person recognition and energy tracking (includes DB logging)
-                event = self.generate_event(occupancy, person_count, devices, recognized_persons, video_filename, frame_count, frame=enhanced_frame)
-                events.append(event)
-                
-                # Print comprehensive status
-                person_ids = [p['person_id'] for p in recognized_persons]
-                devices_on = len([d for d in devices if d.get('state') == 'ON'])
-                devices_total = len(devices)
-                action = event.get('action_type', 'neutral')
-                credits = event.get('blockchain_credits', 0)
-                
-                print(f"Frame {frame_count}: {person_count} person(s) {person_ids}, "
-                      f"{devices_on}/{devices_total} devices ON, "
-                      f"Action: {action}, Credits: ₹{credits}")
-                
-                # Draw detections on frame (if needed for output video, otherwise skip for performance)
-                # annotated_frame = results.plot()
+                if frame_count % processing_interval == 0:
+                    enhanced_frame = self.energy_analyzer.enhance_low_light_frame(frame)
+                    
+                    results = self.process_frame(enhanced_frame)
+                    occupancy, person_count, person_boxes = self.detect_occupancy(results)
+                    devices = self.detect_devices(results, frame=enhanced_frame)
+                    
+                    recognized_persons = []
+                    if person_count > 0:
+                        recognized_persons = self.detect_and_recognize_faces(enhanced_frame, person_boxes)
+                    
+                    event = self.generate_event(occupancy, person_count, devices, recognized_persons, video_filename, frame_count, frame=enhanced_frame)
+                    events.append(event)
+                    
+                    person_ids = [p['person_id'] for p in recognized_persons]
+                    devices_on = len([d for d in devices if d.get('state') == 'ON'])
+                    devices_total = len(devices)
+                    action = event.get('action_type', 'neutral')
+                    credits = event.get('blockchain_credits', 0)
+                    
+                    print(f"Frame {frame_count}: {person_count} person(s) {person_ids}, "
+                          f"{devices_on}/{devices_total} devices ON, "
+                          f"Action: {action}, Credits: ₹{credits}")
+        finally:
+            cap.release()
+            try:
+                cv2.destroyAllWindows()  # safe no-op on headless servers
+            except Exception:
                 pass
-            
-            # Skip waitKey unless in debug/standalone mode
-            pass
-        
-        cap.release()
-        cv2.destroyAllWindows()
         
         # Save events to JSON
         if output_json_path:

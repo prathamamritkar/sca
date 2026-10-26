@@ -18,6 +18,7 @@ from jwt_auth import (
 from blockchain import BlockchainManager
 from flask import send_from_directory
 from config import config
+from sqlalchemy import text, func
 
 from flask.json.provider import DefaultJSONProvider
 
@@ -93,18 +94,19 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def get_cv_processor():
-    """Get or create CV processor instance with database enabled"""
+    """Get or create CV processor instance with database and blockchain enabled"""
     global cv_processor
     if cv_processor is None:
         cv_processor = CVProcessor(use_database=True, db_instance=db)
+        cv_processor.blockchain = blockchain_manager  # reuse global, avoid second RPC call
     return cv_processor
 
 
 @app.teardown_appcontext
 def shutdown_session(exception=None):
-    """Ensure database sessions are closed after request"""
+    """Remove the scoped session for the current thread after each request"""
     if db:
-        db.close()
+        db.Session.remove()
 
 
 @app.route('/')
@@ -371,6 +373,7 @@ def register():
             'access_token': access_token,
             'refresh_token': refresh_token,
             'token_type': 'Bearer',
+            'expires_in': 86400,
             'user': {
                 'user_id': new_user.user_id,
                 'email': new_user.email,
@@ -549,7 +552,7 @@ def upload_video():
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
     """Serve uploaded video files"""
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    return send_from_directory(str(app.config['UPLOAD_FOLDER']), filename)
 
 
 @app.route('/process', methods=['POST'])
@@ -602,10 +605,9 @@ def process_video():
         results['output_file'] = output_filename
         results['download_url'] = f'/results/{output_filename}'
         
-        return jsonify({
-            'message': 'Processing complete',
-            'results': results
-        }), 200
+        # Flatten: return results directly so frontend receives ProcessingResult shape
+        # Frontend expects: { success, filename, events_detected, events, output_file, download_url }
+        return jsonify(results), 200
         
     except Exception as e:
         return jsonify({'error': f'Processing failed: {str(e)}'}), 500
@@ -731,7 +733,6 @@ def get_db_events():
     
     session = db.get_session()
     try:
-        from sqlalchemy import func
         query = session.query(Event)
         
         if person_id:
@@ -740,6 +741,8 @@ def get_db_events():
             query = query.filter(Event.status == status)
         if action:
             query = query.filter(Event.action_detected == action)
+        if action_type := request.args.get('action_type', None):
+            query = query.filter(Event.action_type == action_type)
         if room_id:
             query = query.filter(Event.room_id == room_id)
         if search:
@@ -905,13 +908,7 @@ def bulk_verify_events():
 @app.route('/outputs/<path:filename>')
 def serve_output(filename):
     """Serve output files (processed images, etc)"""
-    return send_from_directory(OUTPUT_FOLDER, filename)
-
-
-@app.route('/uploads/<path:filename>')
-def serve_upload(filename):
-    """Serve uploaded video files for auditing"""
-    return send_from_directory(UPLOAD_FOLDER, filename)
+    return send_from_directory(str(OUTPUT_FOLDER), filename)
 
 
 @app.route('/db/events/export', methods=['GET'])
@@ -1523,7 +1520,17 @@ def get_live_metrics():
         latest_event = session.query(Event).order_by(Event.timestamp.desc()).first()
         
         if not latest_event:
-            return jsonify({'error': 'No events found'}), 404
+            return jsonify({
+                'current_time': datetime.now().isoformat(),
+                'latest_event': None,
+                'last_5_minutes': {
+                    'total_events': 0,
+                    'total_credits_earned': 0,
+                    'total_energy_saved_watts': 0
+                },
+                'device_power_reference': energy_analyzer.DEVICE_POWER if energy_analyzer else {},
+                'credit_rate_per_kwh': energy_analyzer.CREDIT_RATE_PER_KWH if energy_analyzer else 0
+            })
         
         # Get events from last 5 minutes for trending
         five_min_ago = datetime.now() - timedelta(minutes=5)
@@ -1592,4 +1599,4 @@ if __name__ == '__main__':
     print("=" * 50)
     
     # Use config for Flask debug mode
-    app.run(debug=config.FLASK_DEBUG, host='0.0.0.0', port=5000)
+    app.run(debug=config.FLASK_DEBUG, host='0.0.0.0', port=5000, threaded=True)
