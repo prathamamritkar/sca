@@ -198,39 +198,33 @@ class CVProcessor:
     def create_kalman_filter(self, initial_bbox):
         """
         Create Kalman filter for person tracking (reduces false negatives)
-        State: [x, y, width, height, dx, dy]
+        State: [x, y, width, height, dx, dy] (6x1 column vector)
         """
-        kalman = cv2.KalmanFilter(6, 4)  # 6 state vars, 4 measurement vars
-        
-        # State transition matrix (constant velocity model)
-        kalman.transitionMatrix = np.array([
-            [1, 0, 0, 0, 1, 0],
-            [0, 1, 0, 0, 0, 1],
-            [0, 0, 1, 0, 0, 0],
-            [0, 0, 0, 1, 0, 0],
-            [0, 0, 0, 0, 1, 0],
-            [0, 0, 0, 0, 0, 1]
-        ], dtype=np.float32)
-        
-        # Measurement matrix
-        kalman.measurementMatrix = np.array([
-            [1, 0, 0, 0, 0, 0],
-            [0, 1, 0, 0, 0, 0],
-            [0, 0, 1, 0, 0, 0],
-            [0, 0, 0, 1, 0, 0]
-        ], dtype=np.float32)
-        
-        # Process noise covariance
-        kalman.processNoiseCov = np.eye(6, dtype=np.float32) * 0.03
-        
-        # Measurement noise covariance
-        kalman.measurementNoiseCov = np.eye(4, dtype=np.float32) * 0.1
-        
-        # Initialize state
-        x1, y1, x2, y2 = initial_bbox
-        kalman.statePost = np.array([x1, y1, x2-x1, y2-y1, 0, 0], dtype=np.float32)
-        
-        return kalman
+        try:
+            kalman = cv2.KalmanFilter(6, 4)
+            kalman.transitionMatrix = np.array([
+                [1, 0, 0, 0, 1, 0],
+                [0, 1, 0, 0, 0, 1],
+                [0, 0, 1, 0, 0, 0],
+                [0, 0, 0, 1, 0, 0],
+                [0, 0, 0, 0, 1, 0],
+                [0, 0, 0, 0, 0, 1]
+            ], dtype=np.float32)
+            kalman.measurementMatrix = np.array([
+                [1, 0, 0, 0, 0, 0],
+                [0, 1, 0, 0, 0, 0],
+                [0, 0, 1, 0, 0, 0],
+                [0, 0, 0, 1, 0, 0]
+            ], dtype=np.float32)
+            kalman.processNoiseCov = np.eye(6, dtype=np.float32) * 0.03
+            kalman.measurementNoiseCov = np.eye(4, dtype=np.float32) * 0.1
+            
+            x1, y1, x2, y2 = initial_bbox
+            kalman.statePost = np.array([[x1], [y1], [x2-x1], [y2-y1], [0], [0]], dtype=np.float32)
+            kalman.statePre = kalman.statePost.copy()
+            return kalman
+        except Exception:
+            return None
         
     def verify_room_location(self, frame):
         """
@@ -328,13 +322,19 @@ class CVProcessor:
             if self.current_frame_number - frame_last_seen > 90:
                 continue
             
-            # Kalman filter prediction for better spatial matching
+            # Spatial prediction for better matching
             predicted_bbox = last_bbox
-            if person_id in self.kalman_filters:
-                kalman = self.kalman_filters[person_id]
-                prediction = kalman.predict()
-                x, y, w, h = prediction[:4, 0]
-                predicted_bbox = [int(x), int(y), int(x+w), int(y+h)]
+            if person_id in self.kalman_filters and self.kalman_filters[person_id] is not None:
+                try:
+                    prediction = self.kalman_filters[person_id].predict()
+                    if prediction is not None and prediction.size >= 4:
+                        x = prediction[0, 0] if prediction.ndim > 1 else prediction[0]
+                        y = prediction[1, 0] if prediction.ndim > 1 else prediction[1]
+                        w = prediction[2, 0] if prediction.ndim > 1 else prediction[2]
+                        h = prediction[3, 0] if prediction.ndim > 1 else prediction[3]
+                        predicted_bbox = [int(x), int(y), int(x+w), int(y+h)]
+                except Exception:
+                    predicted_bbox = last_bbox
             
             # Calculate appearance similarity
             max_hist_similarity = 0.0
@@ -371,10 +371,13 @@ class CVProcessor:
             self.known_faces[best_match_id]['detection_count'] = self.known_faces[best_match_id].get('detection_count', 0) + 1
             
             # Update Kalman filter
-            if best_match_id in self.kalman_filters:
-                x1, y1, x2, y2 = person_bbox
-                measurement = np.array([x1, y1, x2-x1, y2-y1], dtype=np.float32)
-                self.kalman_filters[best_match_id].correct(measurement)
+            if best_match_id in self.kalman_filters and self.kalman_filters[best_match_id] is not None:
+                try:
+                    x1, y1, x2, y2 = person_bbox
+                    measurement = np.array([[x1], [y1], [x2-x1], [y2-y1]], dtype=np.float32)
+                    self.kalman_filters[best_match_id].correct(measurement)
+                except Exception:
+                    pass
             else:
                 self.kalman_filters[best_match_id] = self.create_kalman_filter(person_bbox)
             
