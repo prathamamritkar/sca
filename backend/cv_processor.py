@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import os
 from ultralytics import YOLO
 from datetime import datetime
 import json
@@ -271,26 +272,35 @@ class CVProcessor:
         Returns: list of person IDs and bounding box locations
         """
         recognized_persons = []
+        if frame is None or frame.size == 0:
+            return recognized_persons
         
+        h, w = frame.shape[:2]
         for box in person_boxes:
-            x1, y1, x2, y2 = box
-            
-            # Extract person region
-            person_roi_color = frame[y1:y2, x1:x2]
-            if person_roi_color.size == 0:
+            try:
+                x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
+                # Clamp to frame bounds
+                x1 = max(0, min(x1, w - 1))
+                y1 = max(0, min(y1, h - 1))
+                x2 = max(x1 + 1, min(x2, w))
+                y2 = max(y1 + 1, min(y2, h))
+                
+                person_roi_color = frame[y1:y2, x1:x2]
+                if person_roi_color is None or person_roi_color.size == 0:
+                    continue
+                
+                person_id = self._match_or_create_person_by_appearance(person_roi_color, [x1, y1, x2, y2])
+                
+                recognized_persons.append({
+                    'person_id': person_id,
+                    'bbox': [x1, y1, x2, y2],
+                    'face_bbox': None,
+                    'confidence': 0.85,
+                    'detection_method': 'appearance',
+                    'wallet_address': self.known_faces.get(person_id, {}).get('wallet_address')
+                })
+            except Exception:
                 continue
-            
-            # Match or create identity using appearance histogram & Kalman spatial tracking
-            person_id = self._match_or_create_person_by_appearance(person_roi_color, [x1, y1, x2, y2])
-            
-            recognized_persons.append({
-                'person_id': person_id,
-                'bbox': [x1, y1, x2, y2],
-                'face_bbox': None,
-                'confidence': 0.85,
-                'detection_method': 'appearance',
-                'wallet_address': self.known_faces[person_id].get('wallet_address')
-            })
         
         return recognized_persons
     
@@ -299,15 +309,25 @@ class CVProcessor:
         Match person by overall appearance when face is not detected
         Uses appearance similarity and spatial proximity
         """
-        if person_roi.size == 0:
+        if person_roi is None or person_roi.size == 0:
             person_id = f"unknown_{self.person_counter}"
             self.person_counter += 1
             return person_id
         
-        # Create appearance histogram (color-based)
-        hsv = cv2.cvtColor(person_roi, cv2.COLOR_BGR2HSV)
-        hist = cv2.calcHist([hsv], [0, 1], None, [50, 60], [0, 180, 0, 256])
-        hist = cv2.normalize(hist, hist).flatten()
+        try:
+            # Ensure 3-channel BGR for HSV conversion
+            if len(person_roi.shape) == 2:
+                person_roi = cv2.cvtColor(person_roi, cv2.COLOR_GRAY2BGR)
+            elif person_roi.shape[2] == 4:
+                person_roi = cv2.cvtColor(person_roi, cv2.COLOR_BGRA2BGR)
+            
+            hsv = cv2.cvtColor(person_roi, cv2.COLOR_BGR2HSV)
+            hist = cv2.calcHist([hsv], [0, 1], None, [50, 60], [0, 180, 0, 256])
+            hist = cv2.normalize(hist, hist).flatten()
+        except Exception:
+            person_id = f"unknown_{self.person_counter}"
+            self.person_counter += 1
+            return person_id
         
         best_match_id = None
         best_match_score = 0.0
@@ -522,13 +542,25 @@ class CVProcessor:
         person_count = 0
         person_boxes = []
         
-        for box in results.boxes:
-            class_id = int(box.cls[0])
-            # Class 0 = person in COCO dataset
-            if class_id == 0:
-                person_count += 1
-                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                person_boxes.append([int(x1), int(y1), int(x2), int(y2)])
+        try:
+            frame_h = getattr(results, 'orig_shape', (None, None))[0] or 1e9
+            frame_w = getattr(results, 'orig_shape', (None, None))[1] or 1e9
+            for box in results.boxes:
+                try:
+                    class_id = int(box.cls[0])
+                    if class_id == 0:
+                        coords = box.xyxy[0].cpu().numpy()
+                        x1 = max(0, int(coords[0]))
+                        y1 = max(0, int(coords[1]))
+                        x2 = min(int(frame_w), int(coords[2]))
+                        y2 = min(int(frame_h), int(coords[3]))
+                        if x2 > x1 and y2 > y1:  # valid box
+                            person_count += 1
+                            person_boxes.append([x1, y1, x2, y2])
+                except Exception:
+                    continue
+        except Exception:
+            pass
         
         return person_count > 0, person_count, person_boxes
     
@@ -684,8 +716,15 @@ class CVProcessor:
         # Get location verification status
         location_status = {'verified': self.location_verified, 'confidence': self.location_confidence}
         
+        # Validate recognized_persons is a list of dicts with required keys
+        safe_persons = []
+        for p in (recognized_persons or []):
+            if isinstance(p, dict) and 'person_id' in p:
+                safe_persons.append(p)
+        recognized_persons = safe_persons
+        
         # Calculate overall detection confidence
-        person_confidences = [p.get('confidence', 0.5) for p in (recognized_persons or [])]
+        person_confidences = [p.get('confidence', 0.5) for p in recognized_persons]
         avg_person_confidence = sum(person_confidences) / len(person_confidences) if person_confidences else 0.0
         
         device_confidences = [d.get('overall_confidence', d.get('confidence', 0.5)) for d in devices]
@@ -732,15 +771,19 @@ class CVProcessor:
         # Log events to database
         if self.db:
             if recognized_persons:
-                # Aggregate credits for the event
                 action_type = action_result.get('action_type', 'neutral')
                 credits = action_result.get('blockchain_credits', 0.0)
                 action_desc = action_result.get('action_detected', 'unknown')
                 
                 for person in recognized_persons:
+                    if not isinstance(person, dict):
+                        continue
+                    person_id = person.get('person_id')
+                    if not person_id:
+                        continue
                     # 1. Log basic presence (small reward)
                     self.log_person_activity(
-                        person['person_id'],
+                        person_id,
                         'presence',
                         {'devices_nearby': len(devices), 'action': action_desc},
                         incentive_points=1,
@@ -750,7 +793,7 @@ class CVProcessor:
                     # 2. Log specific sustainability action if detected
                     if action_type in ['sustainable', 'unsustainable'] and credits != 0:
                         self.log_person_activity(
-                            person['person_id'],
+                            person_id,
                             action_type,
                             {'action': action_desc, 'energy_impact': event['energy_saved_estimate']},
                             incentive_points=round(float(credits), 2),
@@ -782,7 +825,7 @@ class CVProcessor:
                         'department': self.department,
                         'occupancy': occupancy,
                         'person_count': person_count,
-                        'person_id': person['person_id'],
+                        'person_id': person_id,
                         'bbox': person.get('bbox'),
                         'face_bbox': person.get('face_bbox'),
                         'confidence': person.get('confidence'),
@@ -800,9 +843,11 @@ class CVProcessor:
                         'energy_saved_estimate': event['energy_saved_estimate'],
                         'blockchain_credits': event['blockchain_credits']
                     }
-                    self.db.add_event(event_data)
+                    try:
+                        self.db.add_event(event_data)
+                    except Exception:
+                        pass
             else:
-                # Log event even if no specific person identified (e.g. system automatic OFF)
                 event_data = {
                     'timestamp': event['timestamp'],
                     'room_id': self.room_id,
@@ -821,7 +866,10 @@ class CVProcessor:
                     'energy_saved_estimate': event['energy_saved_estimate'],
                     'blockchain_credits': event['blockchain_credits']
                 }
-                self.db.add_event(event_data)
+                try:
+                    self.db.add_event(event_data)
+                except Exception:
+                    pass
         
         return event
     
@@ -946,13 +994,21 @@ class CVProcessor:
         else:
             timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
             output_file = f"outputs/events_{timestamp_str}.json"
-            
-        with open(output_file, 'w') as f:
-            json.dump(events, f, indent=2, cls=NumpyEncoder)
+        
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(output_file)), exist_ok=True)
+            with open(output_file, 'w') as f:
+                json.dump(events, f, indent=2, cls=NumpyEncoder)
+        except Exception as e:
+            print(f"⚠ Could not save events JSON: {e}")
         
         # Save person logs
-        person_logs_file = f"outputs/person_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        self.save_person_logs(person_logs_file)
+        try:
+            person_logs_file = f"outputs/person_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            os.makedirs('outputs', exist_ok=True)
+            self.save_person_logs(person_logs_file)
+        except Exception as e:
+            print(f"⚠ Could not save person logs: {e}")
         
         print(f"✓ Saved {len(events)} events to {output_file}")
         
